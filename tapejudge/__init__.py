@@ -9,13 +9,14 @@ from .engine import Competition, JudgeEvaluation, ScoringError
 from .netlist import IllFormed, NetlistBuilder, beat, decode, encode, load, pack, unpack
 from .rubric import Criterion, Rubric, compile_rubric, decode_outputs
 from .service import ConflictError, TapeJudgeService, ValidationError
-from .store import Store
+from .store import DuplicateError, Store
 from .verifier import reproduce_entry, verify_ranking
 
 __all__ = [
     "Competition",
     "ConflictError",
     "Criterion",
+    "DuplicateError",
     "IllFormed",
     "JudgeEvaluation",
     "NetlistBuilder",

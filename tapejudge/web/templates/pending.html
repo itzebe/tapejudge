@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}{{ c.name }} · TapeJudge{% endblock %}
+{% block content %}
+<div class="crumb"><a href="{{ url_for('index') }}">← Competitions</a></div>
+<div class="page-head">
+  <h1>{{ c.name }}</h1>
+  <p class="sub"><span class="pill {{ c.status }}">{{ c.status }}</span></p>
+</div>
+
+<div class="notice info">
+  <h3>No rule yet</h3>
+  <p>This competition has no rubric, so there is nothing to score or reproduce
+  yet. Configure the scoring rule first; once it is frozen the {{ what }} appear
+  here.</p>
+</div>
+
+<div class="btn-row">
+  <a class="btn primary" href="{{ url_for('rubric', cid=c.id) }}">Configure the rubric →</a>
+  <a class="btn" href="{{ url_for('index') }}">Back to competitions</a>
+</div>
+{% endblock %}

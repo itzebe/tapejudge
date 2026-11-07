@@ -19,7 +19,6 @@ The scoring itself is the Mission 3 core (``rubric.compile_rubric`` /
 """
 from __future__ import annotations
 
-import contextlib
 import hashlib
 import json
 import secrets
@@ -27,7 +26,7 @@ import secrets
 from .engine import Competition, JudgeEvaluation, ScoringError
 from .netlist import encode
 from .rubric import Criterion, Rubric, compile_rubric
-from .store import Store
+from .store import DuplicateError, Store
 from .xlayer import XLayerClient
 
 # Publication modes. Only the first two are "published"; the rest are honest
@@ -46,6 +45,33 @@ class ConflictError(RuntimeError):
     pass
 
 
+# A panel larger than this cannot be judged by hand and only inflates the
+# circuit; the MVP caps it so a rubric stays compilable and a page stays useful.
+MAX_CRITERIA = 32
+MAX_JUDGES = 25
+
+
+def _as_int(value) -> int:
+    """Parse a whole number, rejecting booleans, floats and non-integers.
+
+    ``True`` is an ``int`` in Python and ``int(5.9)`` silently truncates, so a
+    naive ``int(value)`` accepts ``true`` and turns ``5.9`` into ``5`` — a score
+    the judge never submitted. Both must be rejected, not coerced.
+    """
+    if isinstance(value, bool):
+        raise ValueError("a boolean is not a whole number")
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        raise ValueError("a fractional number is not a whole number")
+    if isinstance(value, str):
+        s = value.strip()
+        if s and (s.lstrip("+-").isdigit()):
+            return int(s)
+        raise ValueError("not a whole number")
+    raise ValueError("not a whole number")
+
+
 def _canonical(obj) -> bytes:
     return json.dumps(obj, sort_keys=True, separators=(",", ":")).encode()
 
@@ -55,40 +81,46 @@ def rubric_from_request(competition: str, criteria: list[dict], judges: int,
     """Build a validated Rubric from a request body, with clear error messages."""
     if not isinstance(criteria, list) or not criteria:
         raise ValidationError("a rubric needs at least one criterion")
+    if len(criteria) > MAX_CRITERIA:
+        raise ValidationError(f"a rubric supports at most {MAX_CRITERIA} criteria")
     seen = set()
     built = []
     for i, c in enumerate(criteria):
         name = str(c.get("name", "")).strip()
         if not name:
             raise ValidationError(f"criterion {i + 1}: a name is required")
+        if len(name) > 60:
+            raise ValidationError(f"criterion {i + 1}: name is too long (max 60 characters)")
         if name in seen:
             raise ValidationError(f"criterion name {name!r} is used more than once")
         seen.add(name)
         try:
-            weight = int(c.get("weight"))
+            weight = _as_int(c.get("weight"))
         except (TypeError, ValueError) as e:
             raise ValidationError(
                 f"criterion {name!r}: weight must be a whole number") from e
         try:
-            max_score = int(c.get("max_score"))
+            max_score = _as_int(c.get("max_score"))
         except (TypeError, ValueError) as e:
             raise ValidationError(
                 f"criterion {name!r}: maximum score must be a whole number") from e
         if weight < 1:
             raise ValidationError(f"criterion {name!r}: weight must be at least 1")
+        if weight > 1_000_000:
+            raise ValidationError(f"criterion {name!r}: weight is unreasonably large")
         if max_score < 1:
             raise ValidationError(f"criterion {name!r}: maximum score must be at least 1")
         if max_score > 1_000_000:
             raise ValidationError(f"criterion {name!r}: maximum score is unreasonably large")
         built.append(Criterion(name, weight, max_score))
     try:
-        judges = int(judges)
+        judges = _as_int(judges)
     except (TypeError, ValueError) as e:
         raise ValidationError("panel size must be a whole number") from e
     if judges < 1:
         raise ValidationError("the panel must have at least one judge")
-    if judges > 25:
-        raise ValidationError("the MVP supports at most 25 judges on a panel")
+    if judges > MAX_JUDGES:
+        raise ValidationError(f"the MVP supports at most {MAX_JUDGES} judges on a panel")
     tb = tuple(tie_break) if tie_break else ()
     for n in tb:
         if n not in seen:
@@ -114,6 +146,14 @@ class TapeJudgeService:
             raise ValidationError("a competition needs a name")
         if not judges:
             raise ValidationError("a competition needs at least one judge")
+        judges = [str(j).strip() for j in judges if str(j).strip()]
+        if not judges:
+            raise ValidationError("a competition needs at least one judge")
+        if len(judges) > MAX_JUDGES:
+            raise ValidationError(
+                f"the MVP supports at most {MAX_JUDGES} judges on a panel")
+        if len(set(judges)) != len(judges):
+            raise ValidationError("judge identifiers must be unique")
         return self.store.create_competition(
             name=name.strip(), description=description.strip(), organiser=organiser.strip(),
             opens_at=opens_at.strip(), closes_at=closes_at.strip(),
@@ -125,7 +165,21 @@ class TapeJudgeService:
         if comp["status"] != "draft":
             raise ConflictError("the rubric is frozen and cannot be replaced")
         rubric = rubric_from_request(comp["name"], criteria, judges, tie_break)
-        circuit, meta = compile_rubric(rubric)
+        # The panel identifiers are the only identities allowed to score, so the
+        # frozen panel size must equal the number of evaluations each entry needs.
+        # If they disagree, an entry could be "complete" with fewer scores than
+        # the panel (or impossible to complete), which would corrupt a settlement.
+        panel = json.loads(comp["judges_json"])
+        if len(panel) != rubric.judges:
+            raise ValidationError(
+                f"the rubric needs {rubric.judges} evaluations per entry, but the "
+                f"panel has {len(panel)} judge(s). Set the panel size to match the "
+                "judges, or edit the judge list.")
+        try:
+            circuit, meta = compile_rubric(rubric)
+        except Exception as e:  # IllFormed and friends: a rubric that cannot compile
+            raise ValidationError(
+                f"this rubric cannot be compiled into a circuit: {e}") from e
         net = encode(circuit.elements)
         self.store.set_rubric(
             cid, rubric_json=rubric.to_json(), rubric_digest=rubric.digest(),
@@ -190,9 +244,13 @@ class TapeJudgeService:
         content_hash = hashlib.sha256(_canonical({
             "stable_id": stable_id, "title": title, "summary": summary,
             "link": link, "evidence": evidence})).hexdigest()
-        eid = self.store.add_entry(
-            cid, stable_id=stable_id.strip(), title=title.strip(), summary=summary.strip(),
-            link=link.strip(), evidence=evidence, content_hash=content_hash, private=private)
+        try:
+            eid = self.store.add_entry(
+                cid, stable_id=stable_id.strip(), title=title.strip(), summary=summary.strip(),
+                link=link.strip(), evidence=evidence, content_hash=content_hash, private=private)
+        except DuplicateError as e:
+            raise ConflictError(
+                f"entry {stable_id!r} already exists in this competition") from e
         return self.get_entry(cid, eid)
 
     def get_entry(self, cid: str, entry_id: str) -> dict:
@@ -228,10 +286,18 @@ class TapeJudgeService:
         # Validate against the frozen rubric *before* touching the store.
         normalised = self._validate_scores(rubric, scores)
         commitment = self._commitment(comp, judge, entry_stable_id, normalised)
-        self.store.add_evaluation(
-            cid, entry_id=entry["id"], judge=judge, scores=normalised,
-            justification=justification.strip(), commitment=commitment,
-            nonce="")
+        try:
+            self.store.add_evaluation(
+                cid, entry_id=entry["id"], judge=judge, scores=normalised,
+                justification=justification.strip(), commitment=commitment,
+                nonce="")
+        except DuplicateError as e:
+            # The has_evaluation check above and this insert are not atomic; two
+            # concurrent requests can both pass the check. The DB constraint is
+            # the real guard, so translate its failure into the same conflict.
+            raise ConflictError(
+                f"{judge!r} has already scored {entry_stable_id!r}; "
+                "a submitted score cannot change") from e
         return {"judge": judge, "entry": entry_stable_id, "scores": normalised,
                 "commitment": commitment}
 
@@ -269,18 +335,43 @@ class TapeJudgeService:
                                   entry_ids=tuple(e["stable_id"] for e in entries))
         by_id = {e["id"]: e["stable_id"] for e in entries}
         per_entry: dict[str, list[dict]] = {}
+        valid_counts: dict[str, int] = {}
+        malformed = []
         for ev in evals:
-            per_entry.setdefault(by_id[ev["entry_id"]], []).append(ev)
+            sid = by_id.get(ev["entry_id"])
+            if sid is None:
+                # An evaluation whose entry no longer exists: report it, never
+                # crash and never silently drop it.
+                malformed.append({"entry": ev["entry_id"], "judge": ev["judge"],
+                                  "error": "evaluation references an unknown entry"})
+                continue
+            per_entry.setdefault(sid, []).append(ev)
         for sid, evs in per_entry.items():
             for ev in evs:
-                # A malformed stored row is reported below, never scored.
-                with contextlib.suppress(ScoringError):
-                    comp_engine.submit(JudgeEvaluation(
-                        ev["judge"], sid, json.loads(ev["scores_json"])))
+                # A malformed stored row is reported below, never scored, and
+                # never allowed to raise out of this read-only path.
+                try:
+                    scores = json.loads(ev["scores_json"])
+                except (TypeError, ValueError):
+                    malformed.append({"entry": sid, "judge": ev["judge"],
+                                      "error": "stored score is not valid JSON"})
+                    continue
+                try:
+                    scores = self._validate_scores(rubric, scores)
+                except ValidationError as e:
+                    malformed.append({"entry": sid, "judge": ev["judge"],
+                                      "error": str(e)})
+                    continue
+                try:
+                    comp_engine.submit(JudgeEvaluation(ev["judge"], sid, scores))
+                    valid_counts[sid] = valid_counts.get(sid, 0) + 1
+                except ScoringError as e:
+                    malformed.append({"entry": sid, "judge": ev["judge"],
+                                      "error": str(e)})
         result = comp_engine.rank()
         incomplete = []
         for e in entries:
-            have = len(per_entry.get(e["stable_id"], []))
+            have = valid_counts.get(e["stable_id"], 0)
             if have < rubric.judges:
                 incomplete.append({"entry": e["stable_id"], "received": have,
                                    "required": rubric.judges})
@@ -289,7 +380,7 @@ class TapeJudgeService:
             "rubric_digest": comp["rubric_digest"],
             "ranking": result["ranking"],
             "invalid": [r["entry"] for r in result["invalid"]],
-            "errors": [r for r in result["all"] if "error" in r],
+            "errors": [r for r in result["all"] if "error" in r] + malformed,
             "incomplete": incomplete,
             "entry_count": len(entries),
             "evaluation_count": len(evals),
@@ -309,9 +400,30 @@ class TapeJudgeService:
         entries = self.store.list_entries(cid)
         evals = self.store.list_evaluations(cid)
         by_id = {e["id"]: e["stable_id"] for e in entries}
-        raw = [JudgeEvaluation(ev["judge"], by_id[ev["entry_id"]],
-                               json.loads(ev["scores_json"])) for ev in evals]
+        raw = []
+        malformed = []
+        for ev in evals:
+            sid = by_id.get(ev["entry_id"])
+            if sid is None:
+                malformed.append({"judge": ev["judge"], "entry": ev["entry_id"],
+                                  "error": "evaluation references an unknown entry"})
+                continue
+            try:
+                scores = json.loads(ev["scores_json"])
+            except (TypeError, ValueError):
+                malformed.append({"judge": ev["judge"], "entry": sid,
+                                  "error": "stored score is not valid JSON"})
+                continue
+            try:
+                scores = self._validate_scores(rubric, scores)
+            except ValidationError as e:
+                malformed.append({"judge": ev["judge"], "entry": sid,
+                                  "error": str(e)})
+                continue
+            raw.append(JudgeEvaluation(ev["judge"], sid, scores))
         report = verify_ranking(rubric, tuple(e["stable_id"] for e in entries), raw)
+        if malformed:
+            report["malformed"] = malformed
 
         # Re-check the frozen digests independently of the stored strings.
         from .rubric import compile_rubric
@@ -347,6 +459,11 @@ class TapeJudgeService:
             raise ConflictError(
                 "cannot settle: some entries do not have a full panel "
                 f"({len(result['incomplete'])} incomplete)")
+        if result["invalid"] or result["errors"]:
+            raise ConflictError(
+                "cannot settle: some evaluations are malformed or out of range. "
+                "Fix the inputs first; a result that cannot be reproduced must "
+                "not be finalised.")
         self.store.mark_settled(cid)
         self.store.log_event(cid, "competition_settled",
                              {"ranking": [r["entry"] for r in result["ranking"]]})
@@ -415,13 +532,11 @@ class TapeJudgeService:
         for c in rubric.criteria:
             if c.name not in scores:
                 raise ValidationError(f"missing a score for criterion {c.name!r}")
-            v = scores[c.name]
-            if isinstance(v, bool) or not isinstance(v, int):
-                try:
-                    v = int(v)
-                except (TypeError, ValueError) as e:
-                    raise ValidationError(
-                        f"{c.name!r}: score must be a whole number") from e
+            try:
+                v = _as_int(scores[c.name])
+            except (TypeError, ValueError) as e:
+                raise ValidationError(
+                    f"{c.name!r}: score must be a whole number") from e
             if v < 0 or v > c.max_score:
                 raise ValidationError(
                     f"{c.name!r}: score {v} is outside the permitted range 0–{c.max_score}")

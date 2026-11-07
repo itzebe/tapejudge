@@ -29,6 +29,17 @@ from contextlib import contextmanager
 
 SCHEMA_VERSION = 1
 
+
+class DuplicateError(RuntimeError):
+    """A UNIQUE constraint was violated.
+
+    The service checks for duplicates before inserting, but that check and the
+    insert are not one atomic step: two concurrent requests can both pass the
+    check and then race to insert. The database's UNIQUE constraint is the real
+    guard, and this exception is how that guard surfaces — as a clean 409, never
+    as an unhandled ``sqlite3.IntegrityError`` (which would be a 500).
+    """
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
     key TEXT PRIMARY KEY,
@@ -135,6 +146,15 @@ class Store:
             os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
         self._conn_obj = sqlite3.connect(path, check_same_thread=False)
         self._conn_obj.row_factory = sqlite3.Row
+        # WAL + a busy timeout make concurrent readers and a single writer safe on
+        # a file database (the WAL mode is a no-op for :memory:). FULL synchronous
+        # keeps a committed write durable across a process crash, which matters for
+        # a scoring record that must survive a restart.
+        if path != ":memory:":
+            self._conn_obj.execute("PRAGMA journal_mode=WAL")
+            self._conn_obj.execute("PRAGMA synchronous=FULL")
+        self._conn_obj.execute("PRAGMA busy_timeout=5000")
+        self._conn_obj.execute("PRAGMA foreign_keys=ON")
         # Close the connection when the Store is collected, so tests and short
         # scripts do not leak file handles (SQLite warns otherwise).
         import weakref
@@ -144,8 +164,16 @@ class Store:
     @contextmanager
     def _conn(self):
         with self._lock:
-            yield self._conn_obj
-            self._conn_obj.commit()
+            try:
+                yield self._conn_obj
+            except Exception:
+                # A statement that raised leaves the implicit transaction open;
+                # without an explicit rollback the next block would commit that
+                # half-finished state. Roll back, then let the error surface.
+                self._conn_obj.rollback()
+                raise
+            else:
+                self._conn_obj.commit()
 
     def close(self) -> None:
         with self._lock:
@@ -232,11 +260,15 @@ class Store:
                   content_hash, private=False) -> str:
         eid = new_id("entry")
         with self._conn() as c:
-            c.execute(
-                "INSERT INTO entries(id,competition_id,stable_id,title,summary,link,"
-                "evidence_json,content_hash,private,submitted_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
-                (eid, cid, stable_id, title, summary, link,
-                 json.dumps(evidence or {}), content_hash, 1 if private else 0, _now()))
+            try:
+                c.execute(
+                    "INSERT INTO entries(id,competition_id,stable_id,title,summary,link,"
+                    "evidence_json,content_hash,private,submitted_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                    (eid, cid, stable_id, title, summary, link,
+                     json.dumps(evidence or {}), content_hash, 1 if private else 0, _now()))
+            except sqlite3.IntegrityError as e:
+                raise DuplicateError(
+                    f"entry {stable_id!r} already exists in this competition") from e
         self.log_event(cid, "entry_submitted", {"entry": stable_id, "content_hash": content_hash})
         return eid
 
@@ -257,11 +289,15 @@ class Store:
                        commitment, nonce) -> str:
         eid = new_id("eval")
         with self._conn() as c:
-            c.execute(
-                "INSERT INTO evaluations(id,competition_id,entry_id,judge,scores_json,"
-                "justification,commitment,nonce,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
-                (eid, cid, entry_id, judge, json.dumps(scores, sort_keys=True),
-                 justification, commitment, nonce, _now()))
+            try:
+                c.execute(
+                    "INSERT INTO evaluations(id,competition_id,entry_id,judge,scores_json,"
+                    "justification,commitment,nonce,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                    (eid, cid, entry_id, judge, json.dumps(scores, sort_keys=True),
+                     justification, commitment, nonce, _now()))
+            except sqlite3.IntegrityError as e:
+                raise DuplicateError(
+                    f"{judge!r} has already scored entry {entry_id!r}") from e
         self.log_event(cid, "evaluation_committed",
                        {"entry_id": entry_id, "judge": judge, "commitment": commitment})
         return eid

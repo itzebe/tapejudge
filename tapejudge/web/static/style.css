@@ -60,11 +60,11 @@ header.site .wrap { display: flex; align-items: baseline; gap: var(--s4); paddin
 .brand { font-family: var(--serif); font-size: 1.25rem; font-weight: 700; letter-spacing: -0.01em; text-decoration: none; }
 .brand .mark { color: var(--accent); }
 nav.site { margin-left: auto; display: flex; gap: var(--s4); align-items: baseline; }
-nav.site a { text-decoration: none; color: var(--ink-2); font-size: 0.94rem; }
+nav.site a { text-decoration: none; color: var(--ink-2); font-size: 0.94rem; display: inline-flex; align-items: center; min-height: 32px; }
 nav.site a:hover { color: var(--ink); }
 main { padding: var(--s6) 0 var(--s7); }
 .crumb { color: var(--ink-3); font-size: 0.9rem; margin-bottom: var(--s2); }
-.crumb a { color: var(--ink-3); }
+.crumb a { color: var(--ink-3); display: inline-flex; align-items: center; min-height: 28px; }
 
 /* headings block ---------------------------------------------------------- */
 .page-head { border-bottom: 2px solid var(--ink); padding-bottom: var(--s3); margin-bottom: var(--s5); }
@@ -75,6 +75,11 @@ main { padding: var(--s6) 0 var(--s7); }
 .panel.tight { padding: var(--s3); }
 .panel h2, .panel h3 { margin-bottom: var(--s2); }
 .split { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s5); align-items: start; }
+/* Grid and flex items default to min-width:auto, so a wide child (a pre block,
+   a long hash, a nowrap table) can force the whole column past the viewport and
+   the page scrolls sideways. min-width:0 lets the child shrink and scroll on
+   its own instead. */
+.split > * { min-width: 0; }
 @media (max-width: 720px) { .split { grid-template-columns: 1fr; } }
 
 /* buttons ----------------------------------------------------------------- */
@@ -137,9 +142,9 @@ tbody tr:hover { background: var(--surface-2); }
   padding: var(--s3); font-family: var(--mono); font-size: 0.84rem;
   overflow-x: auto; white-space: pre; margin: var(--s3) 0;
 }
-.hash { font-family: var(--mono); font-size: 0.82rem; word-break: break-all; }
-.copy-row { display: flex; gap: var(--s2); align-items: center; }
-.copy-row .hash { flex: 1; }
+.hash { font-family: var(--mono); font-size: 0.82rem; word-break: break-all; overflow-wrap: anywhere; }
+.copy-row { display: flex; gap: var(--s2); align-items: center; min-width: 0; }
+.copy-row .hash { flex: 1; min-width: 0; }
 
 /* rank table -------------------------------------------------------------- */
 .rank-1 td { background: var(--accent-soft); font-weight: 600; }
@@ -159,6 +164,19 @@ footer.site { border-top: 1px solid var(--line); color: var(--ink-3); font-size:
 footer.site .wrap { padding-top: var(--s4); padding-bottom: var(--s5); }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+/* narrow screens ---------------------------------------------------------- */
+/* A 390px viewport must not scroll sideways. The header wraps, a wide data
+   table scrolls inside its own container, and the definition list stacks. */
+@media (max-width: 640px) {
+  header.site .wrap { flex-wrap: wrap; row-gap: var(--s2); }
+  nav.site { margin-left: 0; width: 100%; }
+  table { display: block; overflow-x: auto; white-space: nowrap; }
+  dl.kv { grid-template-columns: 1fr; gap: var(--s1) var(--s2); }
+  dl.kv dt { margin-top: var(--s2); }
+  .copy-row { flex-wrap: wrap; }
+  main { padding-top: var(--s5); }
+}
 
 /* a11y -------------------------------------------------------------------- */
 .skip {

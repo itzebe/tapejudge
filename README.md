@@ -136,11 +136,11 @@ tapejudge/
     app.py        # Flask app, routes, JSON API.
     templates/    # The eight screens.
     static/       # CSS, a little progressive-enhancement JS, favicon.
-tests/            # Unit + web + integration tests (109).
+tests/            # Unit + web + integration tests (135).
 demo/run_demo.py  # End-to-end demonstration.
 scripts/          # capture_chain_evidence.py
 evidence/         # chain_evidence.json — read-only proof, reproducible.
-docs/             # Integration status, architecture notes.
+docs/             # Integration status, architecture notes, Mission 5 review.
 ```
 
 ---
@@ -170,8 +170,11 @@ evaluator agrees with the chain. They never send a transaction.
 |---|---|---|
 | `TAPEJUDGE_DB` | `:memory:` | SQLite path. Use a file for persistence. |
 | `TAPEJUDGE_HOST` / `TAPEJUDGE_PORT` | `127.0.0.1` / `8080` | Dev server bind. |
-| `TAPEJUDGE_SECRET` | a dev placeholder | Flask session key. Set a real one in production. |
+| `TAPEJUDGE_SECRET` | a per-process random value | Flask session key. Set a real one in production; the app refuses a fixed default. |
 | `TAPEJUDGE_SKIP_CHAIN` | unset | `1` skips the live chain tests. |
+| `TAPEJUDGE_INSECURE_COOKIES` | unset | `1` drops the `Secure` cookie flag (local http demo only). |
+| `TAPEJUDGE_ALLOW_DEV_SECRET` | unset | `1` allows the fixed dev secret outside testing (local demo only). |
+| `TAPEJUDGE_DISABLE_RATELIMIT` | unset | `1` disables the write-endpoint rate limiter. |
 
 ---
 
@@ -181,12 +184,15 @@ This is a functional MVP, not a production service.
 
 * **No authentication.** Judge identity is a recorded identifier, not a verified
   login. The app says so wherever it matters. Adding real auth is the first
-  hardening step before any real competition.
+  hardening step before any real competition — see
+  `docs/TAPEJUDGE_RELEASE_READINESS.md`.
 * **The MVP caps a panel at 25 judges** and uses integer scores.
 * **Publication is prepared, not executed.** Wiring a signer is a deliberate,
   separate step that requires a human decision about keys.
 * **SQLite** is fine for one instance; a multi-instance deployment needs a
   shared store.
 
-See `docs/` for the integration status and the evidence behind the chain
-numbers.
+The Mission 5 independent review and its fixes are in `docs/MISSION5_SECURITY_REVIEW.md`
+(with the threat model, vulnerability register, regression evidence, release
+readiness and deployment plan alongside it). See `docs/` for the integration
+status and the evidence behind the chain numbers.

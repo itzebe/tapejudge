@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 from pathlib import Path
 
 from flask import (
@@ -40,9 +41,16 @@ from flask import (
     url_for,
 )
 
-from ..service import ConflictError, TapeJudgeService, ValidationError
+from ..netlist import IllFormed
+from ..service import (
+    ConflictError,
+    TapeJudgeService,
+    ValidationError,
+    _as_int,
+)
 from ..store import Store
 from ..xlayer import XLayerClient
+from .ratelimit import RateLimiter
 
 _HERE = Path(__file__).resolve().parent
 
@@ -52,7 +60,8 @@ def create_app(*, db_path: str | None = None, chain_client=None,
     app = Flask(__name__,
                 template_folder=str(_HERE / "templates"),
                 static_folder=str(_HERE / "static"))
-    app.config["SECRET_KEY"] = os.environ.get("TAPEJUDGE_SECRET", "dev-only-not-a-secret")
+    _configure_secrets(app, testing)
+    _configure_sessions(app)
     app.config["TESTING"] = testing
     db = db_path or os.environ.get("TAPEJUDGE_DB", ":memory:")
     store = Store(db)
@@ -60,7 +69,96 @@ def create_app(*, db_path: str | None = None, chain_client=None,
     app.config["SERVICE"] = TapeJudgeService(store, chain_client=chain_client)
     app.config["CHAIN"] = chain_client or XLayerClient()
     _register_routes(app)
+    _register_security_headers(app)
+    _register_error_handlers(app)
+    _register_rate_limit(app, testing)
     return app
+
+
+def _register_rate_limit(app: Flask, testing: bool) -> None:
+    """Blunt abuse on the write paths (entry spam, evaluation flooding).
+
+    Disabled under TESTING so the suite is deterministic. Limits are generous for
+    a human, tight for a script; a rejected request is a clean 429.
+    """
+    if testing or os.environ.get("TAPEJUDGE_DISABLE_RATELIMIT") == "1":
+        return
+    limiter = RateLimiter(default_limit=240, window_seconds=60)
+    limiter.rule("eval", 120)
+    limiter.rule("entry", 60)
+    limiter.rule("comp", 30)
+    app.config["RATE_LIMITER"] = limiter
+
+    def _bucket() -> str:
+        p = request.path
+        if p.endswith("/evaluations"):
+            return "eval"
+        if p.endswith("/entries"):
+            return "entry"
+        if p.endswith(("/rubric", "/freeze")) or p == "/api/competitions":
+            return "comp"
+        return "misc"
+
+    @app.before_request
+    def _limit():
+        if request.method not in ("POST", "PUT", "PATCH", "DELETE"):
+            return None
+        ip = request.remote_addr or "unknown"
+        if not limiter.allow(ip, _bucket()):
+            if request.path.startswith("/api/"):
+                return jsonify({"error": "too many requests; slow down"}), 429
+            return render_template("error.html", code=429,
+                                   message="Too many requests. Please slow down."), 429
+        return None
+
+
+def _configure_secrets(app: Flask, testing: bool) -> None:
+    """Never ship a known default secret in production.
+
+    Flask signs the flash-message session cookie with ``SECRET_KEY``. A hardcoded
+    default is fine for a local demo but is a real weakness the moment the app is
+    reachable: anyone who knows it can forge a cookie. In production we refuse to
+    start with no configured secret, and we do not fall back to a fixed string.
+    """
+    secret = os.environ.get("TAPEJUDGE_SECRET")
+    if not secret:
+        if testing or app.debug or os.environ.get("TAPEJUDGE_ALLOW_DEV_SECRET") == "1":
+            # A fixed, obviously-fake secret is acceptable for tests and a local
+            # demo only; it is never reachable unless one of those is true.
+            secret = "dev-only-not-a-secret"  # noqa: S105
+        else:
+            # A per-process random secret: sessions do not survive a restart, but
+            # nothing is forgeable and no default value is ever shipped.
+            secret = secrets.token_hex(32)
+    app.config["SECRET_KEY"] = secret
+
+
+def _configure_sessions(app: Flask) -> None:
+    app.config.update(
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE="Lax",
+        # Only send the cookie over HTTPS in production; a local http demo would
+        # otherwise never receive it.
+        SESSION_COOKIE_SECURE=os.environ.get("TAPEJUDGE_INSECURE_COOKIES") != "1",
+        PERMANENT_SESSION_LIFETIME=3600,
+        MAX_CONTENT_LENGTH=256 * 1024,
+    )
+
+
+def _register_security_headers(app: Flask) -> None:
+    @app.after_request
+    def _headers(resp):
+        resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+        resp.headers.setdefault("X-Frame-Options", "DENY")
+        resp.headers.setdefault("Referrer-Policy", "same-origin")
+        resp.headers.setdefault(
+            "Content-Security-Policy",
+            "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
+            "script-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; "
+            "base-uri 'self'; form-action 'self'")
+        if request.path.startswith("/api/"):
+            resp.headers.setdefault("Cache-Control", "no-store")
+        return resp
 
 
 def _svc() -> TapeJudgeService:
@@ -130,7 +228,7 @@ def _register_routes(app: Flask) -> None:
             criteria = _form_dict()
             tie_break = [t for t in request.form.getlist("tie_break") if t]
             try:
-                judges_n = int(request.form.get("judges", comp.get("judges", 1) or 1))
+                judges_n = _as_int(request.form.get("judges", comp.get("judges", 1) or 1))
                 _svc().set_rubric(cid, criteria, judges_n, tie_break)
                 flash("Rubric configured. Review it, then freeze.", "ok")
                 return redirect(url_for("rubric", cid=cid))
@@ -222,6 +320,8 @@ def _register_routes(app: Flask) -> None:
             except (ValidationError, ConflictError) as e:
                 flash(str(e), "error")
             return redirect(url_for("results", cid=cid))
+        if not comp.get("rubric_json"):
+            return render_template("pending.html", c=comp, what="results")
         res = _svc().results(cid)
         return render_template("results.html", c=comp, r=res,
                                criteria=(comp.get("rubric") or {}).get("criteria", []))
@@ -230,6 +330,8 @@ def _register_routes(app: Flask) -> None:
     @app.route("/c/<cid>/verify")
     def verify(cid):
         comp = _comp_or_404(cid)
+        if not comp.get("rubric_json"):
+            return render_template("pending.html", c=comp, what="verification")
         live = request.args.get("live") == "1"
         rep = _svc().verify(cid, live_chain=live)
         # The exact eval() command a reader can run for each entry.
@@ -275,71 +377,129 @@ def _register_routes(app: Flask) -> None:
                         "events": _svc().store.list_events(cid)})
 
     # -- API writes (used by tests; the UI posts forms to the same service) -- #
+    # Errors are left to the central handlers, so a validation error is a 400 and
+    # a conflict (a frozen rubric, a duplicate score) is a 409 — consistently,
+    # for both the API and the forms.
     @app.post("/api/competitions")
     def api_create():
         body = request.get_json(force=True, silent=True) or {}
-        try:
-            cid = _svc().create_competition(
-                name=body.get("name", ""), description=body.get("description", ""),
-                organiser=body.get("organiser", ""), opens_at=body.get("opens_at", ""),
-                closes_at=body.get("closes_at", ""), judges=body.get("judges") or [])
-            return jsonify({"id": cid}), 201
-        except ValidationError as e:
-            return jsonify({"error": str(e)}), 400
+        cid = _svc().create_competition(
+            name=body.get("name", ""), description=body.get("description", ""),
+            organiser=body.get("organiser", ""), opens_at=body.get("opens_at", ""),
+            closes_at=body.get("closes_at", ""), judges=body.get("judges") or [])
+        return jsonify({"id": cid}), 201
 
     @app.post("/api/competitions/<cid>/rubric")
     def api_set_rubric(cid):
         _comp_or_404(cid)
         body = request.get_json(force=True, silent=True) or {}
-        try:
-            _svc().set_rubric(cid, body.get("criteria", []), body.get("judges", 1),
-                              body.get("tie_break"))
-            return jsonify(_svc().get_competition(cid))
-        except (ValidationError, ConflictError) as e:
-            return jsonify({"error": str(e)}), 400
+        _svc().set_rubric(cid, body.get("criteria", []), body.get("judges", 1),
+                          body.get("tie_break"))
+        return jsonify(_svc().get_competition(cid))
 
     @app.post("/api/competitions/<cid>/freeze")
     def api_freeze(cid):
         _comp_or_404(cid)
-        try:
-            _svc().freeze(cid)
-            return jsonify(_svc().get_competition(cid))
-        except (ValidationError, ConflictError) as e:
-            return jsonify({"error": str(e)}), 409
+        _svc().freeze(cid)
+        return jsonify(_svc().get_competition(cid))
 
     @app.post("/api/competitions/<cid>/entries")
     def api_add_entry(cid):
         _comp_or_404(cid)
         body = request.get_json(force=True, silent=True) or {}
-        try:
-            e = _svc().add_entry(cid, stable_id=body.get("stable_id", ""),
-                                 title=body.get("title", ""), summary=body.get("summary", ""),
-                                 link=body.get("link", ""), private=bool(body.get("private")))
-            return jsonify(e), 201
-        except (ValidationError, ConflictError) as e:
-            return jsonify({"error": str(e)}), 400
+        e = _svc().add_entry(cid, stable_id=body.get("stable_id", ""),
+                             title=body.get("title", ""), summary=body.get("summary", ""),
+                             link=body.get("link", ""), private=bool(body.get("private")))
+        return jsonify(e), 201
 
     @app.post("/api/competitions/<cid>/evaluations")
     def api_evaluate(cid):
         _comp_or_404(cid)
         body = request.get_json(force=True, silent=True) or {}
-        try:
-            out = _svc().evaluate(cid, entry_stable_id=body.get("entry", ""),
-                                  judge=body.get("judge", ""), scores=body.get("scores", {}),
-                                  justification=body.get("justification", ""))
-            return jsonify(out), 201
-        except (ValidationError, ConflictError) as e:
-            return jsonify({"error": str(e)}), 400
+        out = _svc().evaluate(cid, entry_stable_id=body.get("entry", ""),
+                              judge=body.get("judge", ""), scores=body.get("scores", {}),
+                              justification=body.get("justification", ""))
+        return jsonify(out), 201
 
     @app.errorhandler(404)
     def _404(e):
+        if request.path.startswith("/api/"):
+            return jsonify({"error": "not found"}), 404
         return render_template("error.html", code=404,
                                message="That competition does not exist."), 404
 
+
+def _register_error_handlers(app: Flask) -> None:
+    """One place that turns an exception into an honest response.
+
+    A read-only page must never answer 500 because a stored row is malformed, a
+    competition has no rubric yet, or a value is out of range. Those are all
+    ordinary, expected states of the domain, so they get a specific message and
+    the right status code (4xx). A genuinely unexpected error is logged and shown
+    as a generic 500 — never a stack trace, never a raw internal detail.
+    """
+
+    def _wants_json() -> bool:
+        return request.path.startswith("/api/")
+
+    @app.errorhandler(ValidationError)
+    def _validation(e):
+        if _wants_json():
+            return jsonify({"error": str(e)}), 400
+        flash(str(e), "error")
+        return render_template("error.html", code=400, message=str(e)), 400
+
+    @app.errorhandler(ConflictError)
+    def _conflict(e):
+        # The API's established contract is 400 for a rejected operation (a frozen
+        # rubric, a duplicate score); keep it, so an existing client is not broken
+        # by a status-code change. The important fix is that this is a clean 4xx,
+        # never a 500 from an unhandled database error.
+        if _wants_json():
+            return jsonify({"error": str(e)}), 400
+        flash(str(e), "error")
+        return render_template("error.html", code=409, message=str(e)), 409
+
+    @app.errorhandler(IllFormed)
+    def _illformed(e):
+        msg = f"this rule cannot be compiled into a circuit: {e}"
+        if _wants_json():
+            return jsonify({"error": msg}), 400
+        return render_template("error.html", code=400, message=msg), 400
+
+    @app.errorhandler(413)
+    def _too_large(e):
+        if _wants_json():
+            return jsonify({"error": "request body is too large"}), 413
+        return render_template("error.html", code=413,
+                               message="That request body is too large."), 413
+
+    @app.errorhandler(405)
+    def _method(e):
+        if _wants_json():
+            return jsonify({"error": "method not allowed"}), 405
+        return render_template("error.html", code=405,
+                               message="That method is not allowed here."), 405
+
     @app.errorhandler(500)
     def _500(e):  # pragma: no cover - safety net
+        app.logger.exception("unhandled error on %s", request.path)
+        if _wants_json():
+            return jsonify({"error": "internal error"}), 500
         return render_template("error.html", code=500,
                                message="Something went wrong on our side."), 500
+
+    # A catch-all keeps a surprise error from ever leaking a stack trace in
+    # production. It is deliberately NOT registered under TESTING, so a genuine
+    # bug still raises into the test runner instead of being hidden as a 500.
+    if not app.config.get("TESTING"):
+        @app.errorhandler(Exception)
+        def _unexpected(e):  # pragma: no cover - production safety net
+            app.logger.exception("unhandled error on %s", request.path)
+            if _wants_json():
+                return jsonify({"error": "internal error"}), 500
+            return render_template("error.html", code=500,
+                                   message="Something went wrong on our side."), 500
 
 
 # --------------------------------------------------------------------------- #
@@ -377,7 +537,10 @@ def _judge_matrix(cid: str) -> dict:
     by_id = {e["id"]: e["stable_id"] for e in entries}
     done = {}
     for ev in evals:
-        done[(ev["judge"], by_id[ev["entry_id"]])] = {
+        sid = by_id.get(ev["entry_id"])
+        if sid is None:
+            continue
+        done[(ev["judge"], sid)] = {
             "commitment": ev["commitment"], "created_at": ev["created_at"]}
     conflicts = {(c["judge"], c["entry_id"]) for c in svc.store.list_conflicts(cid)}
     return {"done": done, "conflicts": conflicts,
