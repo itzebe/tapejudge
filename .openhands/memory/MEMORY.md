@@ -77,3 +77,42 @@ acted, not whether the judge was fair.
   updated. ARCHITECTURE.md gained an "Authentication and authorisation" section.
 - Auth-suite gotcha: helpers must fetch CSRF from a **200** page (a `/` or the
   target page); fetching a token from a 404 raises before the request is sent.
+
+## Mission 7 (2026-11-07) — release review, deployment, final gate
+
+Repo is a local-only git repo (`master`); HEAD `cb46979`. Suite **196 → 219**
+(+`tests/test_deployment.py`, +Mission-7 regressions). Final gate: full suite
+**219 OK / 0 skipped** (network), 8 skipped offline; `ruff` clean; `pip-audit`
+"no known vulnerabilities"; rendered sweep **21/21** (7 pages × 390/768/1440).
+
+Three release-surface defects found and fixed (register V-17…V-19):
+- **V-17 PII leak:** public unauthenticated `/api/competitions/<cid>/audit` served
+  a judge's email in the `judge_invited` payload. Fix: stop recording it AND
+  `store.redact_event_payload()` (top-level `_REDACTED_EVENT_KEYS={"email"}`)
+  applied in `list_events` so pre-existing rows are redacted too. NOTE: `store.
+  list_events` is the *only* path with that `sort_keys` signature; the other
+  `list_events`-named function is `engine.audit_trail` (different module).
+- **V-18 open redirect:** `next=` used a bare `startswith("/")`; a browser treats
+  `\` as `/`, so `next=/\evil.com` left the site. Fix: `web/app.py::_safe_next`
+  (single leading slash, no backslash, no control char).
+- **V-19:** checkbox was 13×13; now 24×24 (`style.css`, `:has()` flex label).
+
+Deployment is verified in two places: Docker isn't available in this container
+session, so the **production path was exercised directly** — `sh scripts/
+docker-entrypoint.sh` (needs `gunicorn` on PATH; it lives in `~/.local/bin`) +
+gunicorn → `/api/health` 200, security headers present, journey 13/13. The
+entrypoint hard-refuses to start without `TAPEJUDGE_SECRET` or with
+`TAPEJUDGE_ALLOW_DEV_SECRET` set. `.env.example` now documents `TAPEJUDGE_WORKERS`.
+
+- Work-host preview is a **dev** server (`python -m tapejudge.web.app`) on 12000,
+  seeded from `/tmp/tjdemo/app.db`; needs `TAPEJUDGE_ALLOW_DEV_SECRET=1
+  TAPEJUDGE_INSECURE_COOKIES=1`. Seeding the demo file with BOTH `python -m
+  tapejudge.seed <db>` and `--journey` gives 2 competitions (one ready for the
+  journey probe's accounts).
+- Live X Layer reads confirmed this session: chain 196, block ~75.32M, 415
+  processors on the factory, `next_id` 103; the app's local TAP-02 evaluator
+  reproduces on-chain `eval` byte-for-byte for circuits 1–3 (all input combos).
+  Sequential circuits (nState>0) must use `step_circuit`, not `verify_circuit_
+  against_chain`. `XLayerClient` has no `next_circuit_id` — it is `next_id()`.
+- Added an MIT `LICENSE`. Did **not** create a GitHub remote (not explicitly
+  authorised); the repo is self-contained and independently runnable.
