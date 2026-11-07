@@ -193,6 +193,14 @@ def _register_routes(app: Flask) -> None:
             return None
         supplied = request.form.get("csrf_token") or request.headers.get("X-CSRF-Token")
         if not auth.csrf_ok(session, supplied):
+            # A caller who is not signed in has not merely lost a token; telling
+            # them to sign in is clearer than a CSRF error, and no state can
+            # change either way. An authenticated caller gets the CSRF refusal.
+            if g.account is None:
+                if request.path.startswith("/api/"):
+                    return jsonify({"error": "authentication required"}), 401
+                flash("Sign in to continue.", "error")
+                return redirect(url_for("login", next=request.path))
             if request.path.startswith("/api/"):
                 return jsonify({"error": "missing or invalid CSRF token"}), 403
             return render_template("error.html", code=403,

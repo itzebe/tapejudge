@@ -80,9 +80,70 @@ def seed(db_path: str = ":memory:", *, chain_client=None) -> dict:
     return {"competition_id": cid, "results": svc.results(cid)}
 
 
+DEMO_ACCOUNTS = {
+    "organiser": ("organiser@demo.tapejudge.test", "Demo Organiser"),
+    "judge": ("judge@demo.tapejudge.test", "Demo Judge"),
+    "entrant": ("entrant@demo.tapejudge.test", "Demo Entrant"),
+}
+DEMO_PASSWORD = "synthetic-demo-password"  # noqa: S105 — a demo fixture, not a secret
+
+
+def seed_journey(db_path: str = ":memory:", *, chain_client=None) -> dict:
+    """Seed a full account-backed demonstration and return its identifiers.
+
+    Creates three accounts (organiser, judge, entrant), a competition owned by
+    the organiser, a frozen rubric, entries submitted by the entrant, an accepted
+    judge invitation, and a committed score. Every value is synthetic.
+    """
+    store = Store(db_path)
+    svc = TapeJudgeService(store, chain_client=chain_client)
+    accounts = {}
+    for key, (email, name) in DEMO_ACCOUNTS.items():
+        accounts[key] = svc.register_account(
+            email=email, password=DEMO_PASSWORD, display_name=name)
+    org = accounts["organiser"]["id"]
+    cid = svc.create_competition(
+        name="SYNTHETIC — Demo Judging Round",
+        description=("A synthetic, account-backed demonstration round. Every "
+                     "account, entry and score is fabricated to show the workflow."),
+        organiser="Demo Organiser",
+        opens_at="2026-11-01T00:00", closes_at="2026-12-01T23:59",
+        judges=["demo.judge"], prize_note="SYNTHETIC 1,000 USDT (illustrative only)",
+        owner_account_id=org)
+    svc.set_rubric(cid, CRITERIA, judges=1, tie_break=TIE_BREAK)
+    svc.freeze(cid)
+    for sid, title in ENTRIES:
+        svc.add_entry(cid, stable_id=sid, title=title,
+                      summary="Synthetic entry for demonstration.",
+                      link="https://example.com/synthetic",
+                      submitter_account_id=accounts["entrant"]["id"])
+    invite = svc.invite_judge(cid, email=DEMO_ACCOUNTS["judge"][0], label="demo.judge",
+                              organiser_account_id=org)
+    svc.accept_invitation(invite["token"], account_id=accounts["judge"]["id"])
+    for sid in (ENTRIES[0][0], ENTRIES[1][0], ENTRIES[2][0]):
+        svc.evaluate(cid, entry_stable_id=sid, judge="demo.judge",
+                     scores=SCORES["judge.synthetic.alice"][sid],
+                     judge_account_id=accounts["judge"]["id"])
+    return {"competition_id": cid, "accounts": DEMO_ACCOUNTS,
+            "password": DEMO_PASSWORD, "results": svc.results(cid)}
+
+
 if __name__ == "__main__":
-    path = sys.argv[1] if len(sys.argv) > 1 else ":memory:"
-    out = seed(path)
-    print(f"Seeded SYNTHETIC competition {out['competition_id']} into {path}")
-    for row in out["results"]["ranking"]:
-        print(f"  #{row['rank']} {row['entry']:26s} total={row['total']:3d} {row['subtotals']}")
+    args = sys.argv[1:]
+    journey = "--journey" in args
+    args = [a for a in args if a != "--journey"]
+    path = args[0] if args else ":memory:"
+    if journey:
+        out = seed_journey(path)
+        print(f"Seeded SYNTHETIC account-backed demo {out['competition_id']} into {path}")
+        print(f"  sign-in accounts (password: {out['password']}):")
+        for role, (email, _name) in out["accounts"].items():
+            print(f"    {role:10s} {email}")
+        for row in out["results"]["ranking"]:
+            print(f"  #{row['rank']} {row['entry']:26s} total={row['total']:3d}")
+    else:
+        out = seed(path)
+        print(f"Seeded SYNTHETIC competition {out['competition_id']} into {path}")
+        for row in out["results"]["ranking"]:
+            print(f"  #{row['rank']} {row['entry']:26s} total={row['total']:3d} {row['subtotals']}")
+

@@ -286,6 +286,35 @@ class TestEvaluationRace(unittest.TestCase):
             self.assertEqual(len(st.list_evaluations(cid)), 1)
 
 
+class TestPagesWithoutRubric(unittest.TestCase):
+    """A page must never 500 because a competition has no rubric yet.
+
+    The judge page rendered the frozen-rubric panel unconditionally, so a judge
+    who opened a competition before its rubric was frozen got a 500 (a None
+    digest). Every screen reachable before a freeze must render an honest empty
+    state instead.
+    """
+
+    def setUp(self):
+        self.app, self.client = make_client()
+        self.cid = build(self.client, app=self.app, freeze=False, evaluate=False)
+
+    def test_judge_page_without_rubric_is_not_500(self):
+        # A judge cannot exist before a freeze, so check the page as the organiser
+        # (who may legitimately open /judge to inspect it).
+        r = self.client.get(f"/c/{self.cid}/judge")
+        self.assertEqual(r.status_code, 200)
+        self.assertNotIn(b"Internal Server Error", r.data)
+
+    def test_results_page_without_rubric_is_not_500(self):
+        r = self.client.get(f"/c/{self.cid}/results")
+        self.assertEqual(r.status_code, 200)
+
+    def test_verify_page_without_rubric_is_not_500(self):
+        r = self.client.get(f"/c/{self.cid}/verify")
+        self.assertEqual(r.status_code, 200)
+
+
 class TestSecurityHeadersAndSecrets(unittest.TestCase):
     def test_headers_present(self):
         _app, c = make_client(testing=False)

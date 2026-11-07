@@ -20,6 +20,12 @@
 
 {% if not judge %}
   <div class="empty"><p>You are not a judge on this competition.</p></div>
+{% elif not c.rubric %}
+  <div class="empty">
+    <p>The organiser has not frozen a rubric for this competition yet, so there
+    is nothing to score against.</p>
+    <p><a class="btn" href="{{ url_for('publish', cid=c.id) }}">View the competition →</a></p>
+  </div>
 {% else %}
 <div class="split">
   <div>
