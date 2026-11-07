@@ -30,6 +30,22 @@ from typing import ClassVar
 
 SCHEMA_VERSION = 2
 
+# Event payload keys that must never be served from the public audit endpoint.
+# The audit trail is public (the product's promise is that anyone can verify),
+# so an invitee's email address has no business in it: a judge invitation is an
+# organiser-only action, and the address is a personal identifier. Recording the
+# label alone still proves a panel member was invited.
+_REDACTED_EVENT_KEYS = frozenset({"email"})
+
+
+def redact_event_payload(payload: dict) -> dict:
+    """Drop personal identifiers from an audit payload before it is served.
+
+    Applied at the read boundary, so rows written before this rule existed are
+    redacted too, not only new ones.
+    """
+    return {k: v for k, v in payload.items() if k not in _REDACTED_EVENT_KEYS}
+
 
 class DuplicateError(RuntimeError):
     """A UNIQUE constraint was violated.
@@ -501,7 +517,7 @@ class Store:
                 (iid, competition_id, email, role, label, token_hash, invited_by,
                  _now(), expires_at))
         self.log_event(competition_id, "judge_invited",
-                       {"email": email, "role": role, "label": label})
+                       {"role": role, "label": label})
         return iid
 
     def get_invitation_by_token_hash(self, token_hash: str) -> dict | None:
@@ -546,4 +562,11 @@ class Store:
         with self._conn() as c:
             rows = c.execute("SELECT * FROM audit_events WHERE competition_id=? ORDER BY id",
                              (cid,)).fetchall()
-        return [dict(r) for r in rows]
+        out = []
+        for r in rows:
+            ev = dict(r)
+            ev["payload_json"] = json.dumps(
+                redact_event_payload(json.loads(ev["payload_json"] or "{}")),
+                sort_keys=True)
+            out.append(ev)
+        return out

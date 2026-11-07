@@ -427,6 +427,19 @@ class TestStylesheetRegression(unittest.TestCase):
         self.assertIn("summary {", css)
         self.assertIn("min-height: 32px", css)
 
+    def test_checkbox_is_a_real_tap_target(self):
+        """A checkbox/radio must clear the 24px minimum (WCAG 2.5.8).
+
+        A 2026-11-07 audit found the private-entry checkbox at the platform
+        default of 13x13 on /submit at every width.
+        """
+        from pathlib import Path
+        css = (Path(__file__).resolve().parents[1]
+               / "tapejudge" / "web" / "static" / "style.css").read_text()
+        self.assertIn('input[type="checkbox"]', css)
+        self.assertIn('input[type="radio"]', css)
+        self.assertIn("width: 24px", css)
+
 
 class TestHeadingOrder(unittest.TestCase):
     """No template may skip a heading level (WCAG 1.3.1).

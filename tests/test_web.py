@@ -203,6 +203,23 @@ class TestApi(unittest.TestCase):
         self.assertIn("rubric_frozen", kinds)
         self.assertIn("evaluation_committed", kinds)
 
+    def test_public_audit_never_exposes_a_judge_email(self):
+        """The audit trail is public; an invitee's address must not be in it.
+
+        A judge invitation is an organiser action and the address is a personal
+        identifier, so neither a newly written row nor one written before the
+        redaction rule existed may serve it.
+        """
+        cid = build_via_api(self.client, app=self.app)
+        # Write a legacy-style row directly, as a pre-fix database would contain.
+        self.app.config["SERVICE"].store.log_event(
+            cid, "judge_invited", {"email": "leaky@example.test", "label": "j1"})
+        raw = self.client.get(f"/api/competitions/{cid}/audit").get_data(as_text=True)
+        self.assertNotIn("@", raw)
+        data = self.client.get(f"/api/competitions/{cid}/audit").get_json()
+        for ev in data["events"]:
+            self.assertNotIn("email", ev["payload_json"])
+
 
 if __name__ == "__main__":
     unittest.main()

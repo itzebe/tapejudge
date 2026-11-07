@@ -226,6 +226,23 @@ def _register_routes(app: Flask) -> None:
     def _account_id():
         return g.account["id"] if g.account else None
 
+    def _safe_next(nxt: str | None) -> str | None:
+        """Return ``nxt`` only if it is a safe, same-site path; else ``None``.
+
+        A bare ``startswith("/")`` check is not enough: a browser treats a
+        backslash as a forward slash, so ``/\\evil.com`` becomes a protocol-
+        relative URL to another host — an open redirect through the sign-in form.
+        Accept only a path with a single leading slash and no backslash, and
+        reject a control character that could split the Location header.
+        """
+        if not nxt or not nxt.startswith("/"):
+            return None
+        if nxt.startswith("//") or "\\" in nxt:
+            return None
+        if any(ord(ch) < 0x20 for ch in nxt):
+            return None
+        return nxt
+
     def _require_login(next_url=None):
         if g.account is not None:
             return None
@@ -283,10 +300,8 @@ def _register_routes(app: Flask) -> None:
             # Clear any pre-login state, then rotate the session id and token.
             session.clear()
             auth.rotate_session(session, acct)
-            nxt = request.args.get("next") or request.form.get("next") or ""
-            if nxt.startswith("/") and not nxt.startswith("//"):
-                return redirect(nxt)
-            return redirect(url_for("index"))
+            nxt = _safe_next(request.args.get("next") or request.form.get("next"))
+            return redirect(nxt or url_for("index"))
         return render_template("login.html", email="")
 
     @app.route("/signup", methods=["GET", "POST"])

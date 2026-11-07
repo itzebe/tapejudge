@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import sys
 import unittest
+from urllib.parse import urlparse
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -501,6 +502,31 @@ class TestSessionMechanics(unittest.TestCase):
         self.assertEqual(r1.status_code, r2.status_code)
         self.assertIn("Email or password is incorrect", r1.get_data(as_text=True))
         self.assertIn("Email or password is incorrect", r2.get_data(as_text=True))
+
+    def test_login_next_cannot_redirect_off_site(self):
+        """``next`` must not be an open redirect.
+
+        A backslash is treated as a slash by browsers, so ``/\\evil.com`` would
+        leave the site even though it starts with ``/``.
+        """
+        ensure_account(self.app, "a@test.dev")
+        for evil in ("//evil.example", "/\\evil.example", "/x\\evil.example",
+                     "https://evil.example", "/ok\nLocation: https://evil.example"):
+            logout(self.client)
+            r = post(self.client, "/login?next=" + evil,
+                     form={"email": "a@test.dev", "password": PASSWORD})
+            self.assertEqual(r.status_code, 302)
+            loc = r.headers["Location"]
+            parsed = urlparse(loc)
+            # A redirect that stays on this site has no scheme and no host.
+            self.assertEqual(parsed.scheme, "", loc)
+            self.assertEqual(parsed.netloc, "", f"open redirect via {evil!r}: {loc}")
+            self.assertTrue(loc.startswith("/"), loc)
+        # A genuine same-site path is still honoured.
+        logout(self.client)
+        r = post(self.client, "/login?next=/account",
+                 form={"email": "a@test.dev", "password": PASSWORD})
+        self.assertTrue(r.headers["Location"].endswith("/account"))
 
 
 class TestLoginThrottle(unittest.TestCase):

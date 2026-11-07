@@ -113,6 +113,16 @@ select, textarea {
   border: 1px solid var(--line-2); border-radius: var(--radius); background: var(--surface);
 }
 input[aria-invalid="true"], textarea[aria-invalid="true"] { border-color: var(--err); }
+/* A checkbox is a real target, not decoration: the platform default is ~13px,
+   which fails the 24px minimum on touch. The label is also clickable, but the
+   control itself should clear the bar. */
+input[type="checkbox"], input[type="radio"] {
+  width: 24px; height: 24px; min-height: 24px; margin: 0 var(--s2) 0 0;
+  vertical-align: middle; accent-color: var(--accent);
+}
+label:has(input[type="checkbox"]), label:has(input[type="radio"]) {
+  display: flex; align-items: center; font-weight: 500; min-height: 24px;
+}
 textarea { min-height: 84px; resize: vertical; }
 .field { margin-bottom: var(--s4); }
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s4); }
