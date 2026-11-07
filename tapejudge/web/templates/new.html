@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}New competition · TapeJudge{% endblock %}
+{% block content %}
+<div class="crumb"><a href="{{ url_for('index') }}">← Competitions</a></div>
+<div class="page-head">
+  <h1>New competition</h1>
+  <p class="sub">Name the competition and set its boundaries. You will define the
+  scoring rule next.</p>
+</div>
+
+<form method="post" action="{{ url_for('new_competition') }}" novalidate>
+  <div class="panel">
+    <div class="field">
+      <label for="name">Competition name</label>
+      <input type="text" id="name" name="name" required maxlength="120"
+             placeholder="e.g. X Layer Build Jam" autocomplete="off">
+    </div>
+    <div class="field">
+      <label for="description">Short description</label>
+      <textarea id="description" name="description" maxlength="600"
+                placeholder="What is being judged, in one or two sentences."></textarea>
+      <p class="hint">Shown on the competition page. Optional.</p>
+    </div>
+    <div class="grid-2">
+      <div class="field">
+        <label for="organiser">Organiser</label>
+        <input type="text" id="organiser" name="organiser" maxlength="120"
+               placeholder="Who is running this round" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="prize_note">Prize note</label>
+        <input type="text" id="prize_note" name="prize_note" maxlength="160"
+               placeholder="e.g. 10,000 USDT (informational only)" autocomplete="off">
+        <p class="hint">TapeJudge holds no funds. This is a note, not escrow.</p>
+      </div>
+    </div>
+    <div class="grid-2">
+      <div class="field">
+        <label for="opens_at">Opens</label>
+        <input type="datetime-local" id="opens_at" name="opens_at">
+      </div>
+      <div class="field">
+        <label for="closes_at">Entry deadline</label>
+        <input type="datetime-local" id="closes_at" name="closes_at">
+      </div>
+    </div>
+    <fieldset>
+      <legend>Judging panel</legend>
+      <p class="hint">One judge identifier per line. These are the only identities
+      permitted to score. TapeJudge records the identifier; it does not verify
+      that a judge is who they claim to be.</p>
+      <label for="judges_raw">Judges</label>
+      <textarea id="judges_raw" name="judges_raw" required
+                placeholder="judge.alice&#10;judge.bob&#10;judge.carol"></textarea>
+    </fieldset>
+  </div>
+
+  <div class="btn-row">
+    <button class="btn primary" type="submit">Continue to rubric →</button>
+    <a class="btn" href="{{ url_for('index') }}">Cancel</a>
+  </div>
+</form>
+{% endblock %}

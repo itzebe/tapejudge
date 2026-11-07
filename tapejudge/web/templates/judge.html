@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block title %}{{ c.name }} · Judge · TapeJudge{% endblock %}
+{% block content %}
+<div class="crumb"><a href="{{ url_for('index') }}">← Competitions</a> ·
+  <a href="{{ url_for('publish', cid=c.id) }}">{{ c.name }}</a></div>
+<div class="page-head">
+  <h1>Judge evaluation</h1>
+  <p class="sub">Scores are integer, checked against the frozen rubric, and
+  committed. Once submitted, a score cannot be changed.</p>
+</div>
+
+<div class="panel tight">
+  <form method="get" action="{{ url_for('judge', cid=c.id) }}" class="btn-row" style="margin:0">
+    <label for="judge-pick" style="margin:0">Judging as</label>
+    <select id="judge-pick" name="judge" onchange="this.form.submit()" style="max-width:320px">
+      <option value="">— choose a judge —</option>
+      {% for j in c.judges %}
+        <option value="{{ j }}" {% if j == judge %}selected{% endif %}>{{ j }}</option>
+      {% endfor %}
+    </select>
+    <noscript><button class="btn sm" type="submit">Switch</button></noscript>
+  </form>
+</div>
+
+{% if not judge %}
+  <div class="empty"><p>Choose a judge to see the entries that judge must score.</p></div>
+{% else %}
+<div class="split">
+  <div>
+    <div class="panel">
+      <h3>Frozen rubric</h3>
+      <table>
+        <thead><tr><th scope="col">Criterion</th><th scope="col" class="num">Weight</th>
+          <th scope="col" class="num">Max</th></tr></thead>
+        <tbody>
+          {% for crit in c.rubric.criteria %}
+          <tr><td>{{ crit.name }}</td><td class="num">{{ crit.weight }}</td>
+            <td class="num">{{ crit.max_score }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p class="small">Rule digest <span class="hash">{{ c.rubric_digest[:24] }}…</span></p>
+    </div>
+
+    <div class="panel">
+      <h3>Declare a conflict of interest</h3>
+      <p class="hint">Recording a conflict stops this judge scoring that entry.
+      It does not prove the judge is impartial, and TapeJudge does not verify
+      judge identity.</p>
+      <form method="post" action="{{ url_for('judge', cid=c.id) }}">
+        <input type="hidden" name="action" value="conflict">
+        <input type="hidden" name="judge" value="{{ judge }}">
+        <div class="field">
+          <label for="conflict-entry">Entry</label>
+          <select id="conflict-entry" name="entry" required>
+            {% for e in entries %}<option value="{{ e.stable_id }}">{{ e.stable_id }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label for="reason">Reason</label>
+          <input type="text" id="reason" name="reason" maxlength="200">
+        </div>
+        <button class="btn sm" type="submit">Record conflict</button>
+      </form>
+    </div>
+  </div>
+
+  <div>
+    {% for e in entries %}
+      {% set key = judge ~ ':' ~ e.stable_id %}
+      {% set done = matrix.done.get((judge, e.stable_id)) %}
+      {% set conflicted = (judge, matrix.id_by_stable[e.stable_id]) in matrix.conflicts %}
+      <div class="panel tight">
+        <h3>{{ e.stable_id }}
+          {% if done %}<span class="pill settled">✓ committed</span>
+          {% elif conflicted %}<span class="pill">conflict recorded</span>
+          {% else %}<span class="pill draft">not scored</span>{% endif %}
+        </h3>
+        <p class="small">{{ e.title }}</p>
+        {% if done %}
+          <p class="small">Committed at <span class="mono">{{ done.created_at }}</span>.</p>
+          <p class="small">Commitment <span class="hash">{{ done.commitment[:32] }}…</span></p>
+          <p class="muted small">This score is final and read-only.</p>
+        {% elif conflicted %}
+          <p class="muted small">You declared a conflict for this entry and cannot score it.</p>
+        {% else %}
+          <form method="post" action="{{ url_for('judge', cid=c.id) }}">
+            <input type="hidden" name="action" value="score">
+            <input type="hidden" name="judge" value="{{ judge }}">
+            <input type="hidden" name="entry" value="{{ e.stable_id }}">
+            {% for crit in c.rubric.criteria %}
+            <div class="field">
+              <label for="s-{{ e.stable_id }}-{{ crit.name }}">{{ crit.name }}</label>
+              <input type="number" id="s-{{ e.stable_id }}-{{ crit.name }}"
+                     name="score_{{ crit.name }}" min="0" max="{{ crit.max_score }}"
+                     step="1" required aria-describedby="max-{{ e.stable_id }}-{{ crit.name }}">
+              <span class="small" id="max-{{ e.stable_id }}-{{ crit.name }}">out of {{ crit.max_score }}</span>
+            </div>
+            {% endfor %}
+            <div class="field">
+              <label for="j-{{ e.stable_id }}">Justification (optional)</label>
+              <textarea id="j-{{ e.stable_id }}" name="justification" maxlength="1000"></textarea>
+            </div>
+            <div class="notice warn small" style="margin:0 0 8px">
+              Once submitted, this score cannot be changed.
+            </div>
+            <button class="btn primary" type="submit">Submit score</button>
+          </form>
+        {% endif %}
+      </div>
+    {% endfor %}
+    {% if not entries %}
+      <div class="empty"><p>No entries to score yet.</p></div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+{% endblock %}

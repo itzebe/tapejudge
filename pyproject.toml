@@ -1,0 +1,59 @@
+[project]
+name = "tapejudge"
+version = "0.1.0"
+description = "Competition scoring whose rule is a frozen TapeOut circuit on X Layer"
+requires-python = ">=3.11"
+dependencies = [
+    "flask>=3.0",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["tapejudge*"]
+
+[tool.setuptools.package-data]
+tapejudge = ["web/templates/*.html", "web/static/*"]
+
+[project.optional-dependencies]
+dev = ["ruff>=0.6"]
+
+[project.scripts]
+tapejudge = "tapejudge.web.app:main"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "SIM", "RUF", "PIE", "BLE", "FURB"]
+# Deliberate, documented exceptions:
+#   BLE001 — a best-effort chain read must degrade to an honest state, never 500.
+#   S112   — the TAPEOUT_FEE getter falls through to "unknown"; that is the design.
+#   RUF001 — the multiplication sign "×" is intentional in human-facing copy.
+ignore = ["BLE001", "S112", "RUF001"]
+
+[tool.ruff.lint.per-file-ignores]
+# Assertions in tests are correct and intentional.
+"tests/*.py" = ["S101"]
+# A module-level self-check assert that pins the TAP-02 selector.
+"tapejudge/xlayer.py" = ["S101"]
+# The Mission 3 core is vendored byte-faithful; its formatting is not ours to
+# reformat. Style lints are relaxed for those files (S310: chain.py calls a
+# fixed https RPC URL; the scheme is not user-controlled).
+"tapejudge/netlist.py" = ["E501", "RUF005", "B905"]
+"tapejudge/rubric.py" = ["E501", "RUF005"]
+"tapejudge/engine.py" = ["E501"]
+"tapejudge/verifier.py" = ["E501"]
+"tapejudge/lifecycle.py" = ["E501"]
+"tapejudge/chain.py" = ["E501", "S310"]
+# The Mission 3 tests are vendored unchanged; keep them byte-faithful.
+"tests/test_netlist.py" = ["RUF059", "F841", "SIM117", "E501", "RUF005"]
+"tests/test_scoring.py" = ["RUF059", "F841", "SIM117", "E501", "B905"]
+"tests/test_adversarial.py" = ["RUF059", "F841", "E501"]
+"tests/test_chain.py" = ["E501"]

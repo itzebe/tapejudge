@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Competitions · TapeJudge{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Competitions</h1>
+  <p class="sub">Every competition below has a scoring rule that was frozen as a
+  circuit. Open one to read the rule, the results, and the exact call that
+  reproduces them.</p>
+</div>
+
+{% if competitions %}
+<table>
+  <thead>
+    <tr>
+      <th scope="col">Competition</th>
+      <th scope="col">Status</th>
+      <th scope="col">Rule</th>
+      <th scope="col" class="num">Circuit</th>
+      <th scope="col"></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for c in competitions %}
+    <tr>
+      <td>
+        <a href="{{ url_for('results', cid=c.id) }}">{{ c.name }}</a>
+        {% if c.organiser %}<div class="small muted">{{ c.organiser }}</div>{% endif %}
+      </td>
+      <td><span class="pill {{ c.status }}">{{ c.status }}</span></td>
+      <td>
+        {% if c.rubric_digest %}
+          <span class="hash">{{ c.rubric_digest[:16] }}…</span>
+        {% else %}<span class="muted">no rubric</span>{% endif %}
+      </td>
+      <td class="num">
+        {% if c.gates %}{{ c.gates }} gates{% else %}—{% endif %}
+      </td>
+      <td class="right">
+        {% if c.status == 'draft' %}
+          <a class="btn sm" href="{{ url_for('rubric', cid=c.id) }}">Configure</a>
+        {% else %}
+          <a class="btn sm" href="{{ url_for('verify', cid=c.id) }}">Verify</a>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="empty">
+  <p>No competitions yet.</p>
+  <p><a class="btn primary" href="{{ url_for('new_competition') }}">Create the first competition</a></p>
+</div>
+{% endif %}
+
+<div class="panel tight">
+  <h3>How this works</h3>
+  <p class="small">An organiser writes a rubric; TapeJudge compiles it into a
+  circuit and records it. Every score and every ranking is computed by that
+  circuit, and anyone can re-run it for free. The rule cannot be edited after it
+  is frozen; a judge's submitted score cannot be edited either. What the circuit
+  does <em>not</em> prove is that the scores were fair — it makes the rule fixed
+  and the arithmetic reproducible, and says so plainly.</p>
+</div>
+
+<p class="small muted">X Layer RPC reachable from this server:
+  {{ 'yes' if chain_reachable else 'no' }}.</p>
+{% endblock %}

@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block title %}{{ c.name }} · Verify · TapeJudge{% endblock %}
+{% block content %}
+<div class="crumb"><a href="{{ url_for('index') }}">← Competitions</a> ·
+  <a href="{{ url_for('results', cid=c.id) }}">{{ c.name }}</a></div>
+<div class="page-head">
+  <h1>Reproduce this result yourself</h1>
+  <p class="sub">Everything below is enough to recompute the ranking. No account,
+  no wallet, no trust in this page.</p>
+</div>
+
+{% if rep.frozen_rule_ok %}
+<div class="notice ok" role="status">
+  <h3>✓ The frozen rule is intact</h3>
+  <p>The rubric digest and the netlist hash recomputed here match the values
+  recorded at freeze. The rule did not move.</p>
+</div>
+{% else %}
+<div class="notice err" role="alert">
+  <h3>✗ The frozen rule does not match</h3>
+  <p>The rubric or netlist recomputed here differs from what was recorded at
+  freeze. Do not accept this result.</p>
+</div>
+{% endif %}
+
+<div class="split">
+  <div>
+    <div class="panel">
+      <h3>1. The identifiers</h3>
+      <dl class="kv">
+        <dt>Rubric digest</dt>
+        <dd class="copy-row"><span class="hash" id="digest">{{ c.rubric_digest }}</span>
+          <button class="btn sm" data-copy="#digest">Copy</button></dd>
+        <dt>Netlist SHA-256</dt>
+        <dd class="copy-row"><span class="hash" id="nsha">{{ c.netlist_sha256 }}</span>
+          <button class="btn sm" data-copy="#nsha">Copy</button></dd>
+        <dt>Chain id</dt><dd class="mono">{{ c.publication.chain_id or '—' }}</dd>
+        <dt>Processor</dt>
+        <dd class="copy-row"><span class="hash" id="proc">{{ c.publication.processor or 'not published' }}</span>
+          {% if c.publication.processor %}<button class="btn sm" data-copy="#proc">Copy</button>{% endif %}</dd>
+        <dt>Circuit id</dt><dd class="mono">{{ c.publication.circuit_id if c.publication.circuit_id is not none else 'not published' }}</dd>
+      </dl>
+    </div>
+
+    <div class="panel">
+      <h3>2. The rule, in plain language</h3>
+      {% if c.rubric %}
+      <p>Each entry is scored by {{ c.rubric.judges }} judge{{ 's' if c.rubric.judges != 1 else '' }}
+        on {{ c.rubric.criteria|length }} criteria:
+        {% for crit in c.rubric.criteria %}{{ crit.weight }}×{{ crit.name }}{% if not loop.last %} + {% endif %}{% endfor %},
+        summed across the panel.</p>
+      {% endif %}
+      <details>
+        <summary class="small">The rule as JSON (the digest is its SHA-256)</summary>
+        <div class="codeblock" id="rubric-json">{{ c.rubric_json }}</div>
+        <button class="btn sm" data-copy="#rubric-json">Copy</button>
+      </details>
+    </div>
+
+    <div class="panel">
+      <h3>3. Re-run locally in this page</h3>
+      <p class="small">This server recompiled the frozen rubric, re-packed the
+      committed scores, re-ran the same TAP-02 evaluator the X Layer contracts
+      use, and produced the ranking below. The ranking on the results page is
+      computed the same way — from inputs, never from a stored result.</p>
+      <table>
+        <thead><tr><th scope="col" class="num">#</th><th scope="col">Entry</th>
+          <th scope="col" class="num">Total</th><th scope="col" class="num">valid</th></tr></thead>
+        <tbody>
+          {% for row in rep.ranking %}
+          <tr><td class="num">{{ row.rank }}</td><td>{{ row.entry }}</td>
+            <td class="num">{{ row.total }}</td><td class="num">1</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <div class="btn-row">
+        <a class="btn sm" href="{{ url_for('api_verify', cid=c.id) }}">Verify JSON</a>
+        <a class="btn sm" href="{{ url_for('api_audit', cid=c.id) }}">Audit trail JSON</a>
+        {% if c.publication.on_chain %}
+        <a class="btn sm" href="{{ url_for('verify', cid=c.id, live='1') }}">Compare with X Layer</a>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <div class="panel">
+      <h3>4. Run it against the chain</h3>
+      {% if c.publication.on_chain %}
+        <p class="small">The circuit is published on X Layer. This is a free read.</p>
+        <div class="codeblock">{% for cmd in commands %}cast call {{ c.publication.processor }} \
+  "eval(uint256,bytes)(bytes)" {{ c.publication.circuit_id }} 0x…{{ '\n' }}{% endfor %}</div>
+        {% if live and rep.chain_reads %}
+          <p class="small">Chain reads performed just now (read-only):</p>
+          <table>
+            <thead><tr><th scope="col">Entry</th><th scope="col">Input</th><th scope="col">Chain output</th></tr></thead>
+            <tbody>
+              {% for cr in rep.chain_reads %}
+              <tr><td class="mono">{{ cr.entry }}</td>
+                <td class="hash">{{ cr.input[:26] }}…</td>
+                <td class="hash">{{ cr.chain_output[:26] }}…</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% elif live and rep.chain_reads_error %}
+          <div class="notice err"><p>Chain read failed: {{ rep.chain_reads_error }}</p></div>
+        {% endif %}
+      {% else %}
+        <div class="notice warn">
+          <h3>Not published on chain</h3>
+          <p>{{ c.publication.label }}. A locally compiled circuit is <em>not</em>
+          an on-chain circuit. The arithmetic below is reproducible, but there is
+          no chain read to compare it against yet.</p>
+        </div>
+        <p class="small">The exact call, once published, will be:</p>
+        <div class="codeblock" id="cast-cmd">cast call &lt;processor&gt; \
+  "eval(uint256,bytes)(bytes)" &lt;circuitId&gt; &lt;inputs&gt;</div>
+      {% endif %}
+    </div>
+
+    <div class="panel">
+      <h3>The exact inputs</h3>
+      <p class="small">The packed input bytes for each entry are in the Verify
+      JSON. Packing is little-endian, LSB first, judge-major: for each judge (in
+      order), for each criterion (declaration order), the score's bits.</p>
+      <a class="btn sm" href="{{ url_for('api_verify', cid=c.id) }}">Open Verify JSON</a>
+    </div>
+
+    <div class="notice info">
+      <h3>What this proves, and what it does not</h3>
+      <p class="small"><strong>Proves:</strong> given these committed scores, this
+      is the ranking, and the rule could not have changed. <strong>Does not
+      prove:</strong> that the scores were fair, that the judges were independent,
+      or that a judge is who they claim. Those are human problems; TapeJudge makes
+      the input auditable and the output reproducible.</p>
+    </div>
+  </div>
+</div>
+{% endblock %}

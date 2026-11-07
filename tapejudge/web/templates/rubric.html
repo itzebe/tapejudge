@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block title %}{{ c.name }} · Rubric · TapeJudge{% endblock %}
+{% block content %}
+<div class="crumb"><a href="{{ url_for('index') }}">← Competitions</a></div>
+<div class="page-head">
+  <h1>{{ c.name }}</h1>
+  <p class="sub">Configure the scoring rule. It becomes a circuit; after you
+  freeze it, it cannot change.</p>
+</div>
+
+{% if c.status != 'draft' %}
+<div class="notice info">
+  <h3>This rubric is frozen</h3>
+  <p>The rule is fixed and cannot be replaced. Digest
+    <span class="hash">{{ c.rubric_digest[:24] }}…</span></p>
+  <p><a class="btn" href="{{ url_for('publish', cid=c.id) }}">Go to publication →</a></p>
+</div>
+{% endif %}
+
+<div class="split">
+  <div>
+    {% if c.status == 'draft' %}
+    <form method="post" action="{{ url_for('rubric', cid=c.id) }}" id="rubric-form">
+      <fieldset>
+        <legend>Criteria</legend>
+        <p class="hint">Weight ≥ 1. Maximum ≥ 1. Machine-checkable or
+        committed-integer criteria only — the circuit sums numbers a judge
+        commits to, it does not judge quality itself.</p>
+        <table id="crit-table">
+          <thead>
+            <tr><th scope="col">Name</th><th scope="col">Weight</th>
+                <th scope="col">Max score</th><th scope="col"></th></tr>
+          </thead>
+          <tbody id="crit-body">
+            {% for crit in (c.rubric.criteria if c.rubric else [{'name':'working_demo','weight':3,'max_score':10},{'name':'tests_passing','weight':2,'max_score':10},{'name':'code_review','weight':1,'max_score':5}]) %}
+            <tr>
+              <td><input type="text" name="crit_name" value="{{ crit.name }}" aria-label="Criterion name" required></td>
+              <td><input type="number" name="crit_weight" value="{{ crit.weight }}" min="1" step="1" aria-label="Weight" required></td>
+              <td><input type="number" name="crit_max" value="{{ crit.max_score }}" min="1" step="1" aria-label="Maximum score" required></td>
+              <td><button type="button" class="btn sm" data-remove-row aria-label="Remove this criterion">Remove</button></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        <button type="button" class="btn sm" id="add-row">+ Add criterion</button>
+      </fieldset>
+
+      <fieldset>
+        <legend>Panel &amp; tie-break</legend>
+        <div class="grid-2">
+          <div class="field">
+            <label for="judges">Judges on the panel</label>
+            <input type="number" id="judges" name="judges" min="1" max="25" step="1"
+                   value="{{ c.judges|length if c.judges else 3 }}">
+            <p class="hint">Every entry must receive exactly this many scores.</p>
+          </div>
+          <div class="field">
+            <label for="tie_break">Tie-break order</label>
+            <select id="tie_break" name="tie_break" multiple size="4" aria-describedby="tb-hint">
+              {% for crit in (c.rubric.criteria if c.rubric else []) %}
+                <option value="{{ crit.name }}" {% if crit.name in (c.tie_break or []) %}selected{% endif %}>{{ crit.name }}</option>
+              {% endfor %}
+            </select>
+            <p class="hint" id="tb-hint">Highest first. Optional; defaults to
+            declaration order.</p>
+          </div>
+        </div>
+      </fieldset>
+
+      <div class="btn-row">
+        <button class="btn primary" type="submit">Save rubric</button>
+      </div>
+    </form>
+    {% endif %}
+  </div>
+
+  <div>
+    <div class="panel">
+      <h3>The rule, in plain language</h3>
+      {% if preview %}
+        <p>{{ preview.sentence }}</p>
+        {% if preview.tie_break %}
+        <p class="small">Ties break on {{ preview.tie_break|join(', then ') }}.</p>
+        {% endif %}
+        <dl class="kv">
+          <dt>Max possible total</dt><dd class="mono">{{ max_total }}</dd>
+          <dt>Circuit size</dt><dd class="mono">{{ c.gates }} gates</dd>
+          <dt>Circuit inputs</dt><dd class="mono">{{ c.n_in }} bits</dd>
+          <dt>Circuit outputs</dt><dd class="mono">{{ c.n_out }} bits</dd>
+          <dt>Rubric digest</dt><dd class="hash">{{ c.rubric_digest }}</dd>
+        </dl>
+        <details>
+          <summary class="small">View the compiled netlist ({{ c.netlist_hex|length // 2 - 1 }} bytes)</summary>
+          <div class="codeblock" id="netlist-hex">{{ c.netlist_hex }}</div>
+          <div class="copy-row">
+            <button class="btn sm" data-copy="#netlist-hex">Copy netlist</button>
+          </div>
+          <p class="small">SHA-256 <span class="hash">{{ c.netlist_sha256 }}</span></p>
+        </details>
+      {% else %}
+        <p class="muted">Configure criteria on the left. The rule and the circuit
+        size will appear here, so you can see exactly what you are about to
+        freeze.</p>
+      {% endif %}
+    </div>
+
+    {% if c.status == 'draft' and c.rubric_json %}
+    <div class="panel">
+      <h3>Freeze the rule</h3>
+      <p>Freezing compiles the rule into the circuit above and fixes it. After
+      this point it cannot be replaced.</p>
+      <form method="post" action="{{ url_for('publish', cid=c.id) }}">
+        <button class="btn primary" type="submit" name="action" value="freeze">Freeze &amp; publish →</button>
+      </form>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<script>
+  document.getElementById("add-row")?.addEventListener("click", function () {
+    var body = document.getElementById("crit-body");
+    var tr = document.createElement("tr");
+    tr.innerHTML = '<td><input type="text" name="crit_name" aria-label="Criterion name" required></td>' +
+      '<td><input type="number" name="crit_weight" value="1" min="1" step="1" aria-label="Weight" required></td>' +
+      '<td><input type="number" name="crit_max" value="10" min="1" step="1" aria-label="Maximum score" required></td>' +
+      '<td><button type="button" class="btn sm" data-remove-row aria-label="Remove this criterion">Remove</button></td>';
+    body.appendChild(tr);
+  });
+  document.addEventListener("click", function (e) {
+    if (e.target.closest("[data-remove-row]")) {
+      var rows = document.querySelectorAll("#crit-body tr");
+      if (rows.length > 1) e.target.closest("tr").remove();
+    }
+  });
+</script>
+{% endblock %}

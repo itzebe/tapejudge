@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block title %}{{ c.name }} · Results · TapeJudge{% endblock %}
+{% block content %}
+<div class="crumb"><a href="{{ url_for('index') }}">← Competitions</a></div>
+<div class="page-head">
+  <h1>{{ c.name }}</h1>
+  <p class="sub">
+    {% if c.status == 'settled' %}<span class="pill settled">Final</span>
+    {% else %}<span class="pill {{ c.status }}">{{ c.status }}</span>{% endif %}
+    {% if c.rubric_digest %}· rule <span class="hash">{{ c.rubric_digest[:16] }}…</span>{% endif %}
+  </p>
+</div>
+
+{% if r.invalid or r.errors %}
+<div class="notice err" role="alert">
+  <h3>Result withheld</h3>
+  <p>{{ r.invalid|length + r.errors|length }} entr{{ 'y' if (r.invalid|length + r.errors|length) == 1 else 'ies' }}
+     could not be scored: an out-of-range score, or a stored evaluation the frozen
+     rules reject. The circuit flags this rather than silently accepting it.</p>
+  {% if r.invalid %}<p class="small">Invalid: {{ r.invalid|join(', ') }}</p>{% endif %}
+</div>
+{% endif %}
+
+{% if r.incomplete %}
+<div class="notice warn" role="status">
+  <h3>Judging incomplete</h3>
+  <p>Some entries do not yet have a full panel. They are shown below but cannot
+  be finalised.</p>
+  <ul class="small">
+    {% for inc in r.incomplete %}
+    <li>{{ inc.entry }} — {{ inc.received }} of {{ inc.required }} evaluations</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+<div class="panel">
+  <h3>Ranking</h3>
+  {% if r.ranking %}
+  <table>
+    <thead>
+      <tr>
+        <th scope="col" class="num">#</th>
+        <th scope="col">Entry</th>
+        <th scope="col" class="num">Total</th>
+        {% for crit in criteria %}<th scope="col" class="num">{{ crit.name }}</th>{% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in r.ranking %}
+      <tr class="{{ 'rank-1' if row.rank == 1 else '' }}">
+        <td class="num">{{ row.rank }}</td>
+        <td>{{ row.entry }}</td>
+        <td class="num"><strong>{{ row.total }}</strong></td>
+        {% for i in range(criteria|length) %}
+          <td class="num">{{ row.subtotals[i] }}</td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="small">Subtotals are per criterion, summed across the panel and
+  weighted. They turn "why did I lose?" into a comparison.</p>
+  {% else %}
+  <p class="muted">No scorable entries yet.</p>
+  {% endif %}
+</div>
+
+<div class="panel tight">
+  <dl class="kv">
+    <dt>Entries</dt><dd class="mono">{{ r.entry_count }}</dd>
+    <dt>Evaluations</dt><dd class="mono">{{ r.evaluation_count }}</dd>
+    <dt>Panel</dt><dd class="mono">{{ c.judges|join(' · ') }}</dd>
+    <dt>Rule digest</dt>
+    <dd class="copy-row"><span class="hash" id="digest">{{ c.rubric_digest }}</span>
+      <button class="btn sm" data-copy="#digest">Copy</button></dd>
+    {% if c.prize_note %}<dt>Prize</dt><dd>{{ c.prize_note }} <span class="muted small">(note only — no funds are held)</span></dd>{% endif %}
+  </dl>
+  <div class="btn-row">
+    <a class="btn primary" href="{{ url_for('verify', cid=c.id) }}">Reproduce this ranking →</a>
+    <a class="btn" href="{{ url_for('api_results', cid=c.id) }}">Results JSON</a>
+    {% if c.status != 'settled' and r.ranking and not r.incomplete and not r.invalid and not r.errors %}
+    <form method="post" action="{{ url_for('results', cid=c.id) }}" style="display:inline">
+      <button class="btn" type="submit">Finalise</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+<div class="panel tight">
+  <details>
+    <summary class="small">Every evaluation and its commitment</summary>
+    {% if r.ranking %}
+    <table>
+      <thead><tr><th scope="col">Entry</th><th scope="col">Judge</th>
+        {% for crit in criteria %}<th scope="col" class="num">{{ crit.name }}</th>{% endfor %}</tr></thead>
+      <tbody>
+        {% for row in r.ranking %}
+          {% for ev in row.evaluations %}
+          <tr>
+            <td class="mono">{{ row.entry }}</td>
+            <td class="mono">{{ ev.judge }}</td>
+            {% for crit in criteria %}<td class="num">{{ ev.scores[crit.name] }}</td>{% endfor %}
+          </tr>
+          {% endfor %}
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}<p class="muted small">Nothing committed yet.</p>{% endif %}
+  </details>
+</div>
+{% endblock %}

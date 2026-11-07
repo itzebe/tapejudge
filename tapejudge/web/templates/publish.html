@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}{{ c.name }} · Publish · TapeJudge{% endblock %}
+{% block content %}
+<div class="crumb"><a href="{{ url_for('index') }}">← Competitions</a></div>
+<div class="page-head">
+  <h1>{{ c.name }}</h1>
+  <p class="sub">Publication and freezing. This is the moment the rule becomes
+  fixed and the identifiers you can publish with your results are minted.</p>
+</div>
+
+<div class="split">
+  <div>
+    <div class="panel">
+      <h3>Frozen rule</h3>
+      {% if c.rubric %}
+      <dl class="kv">
+        <dt>Rubric digest</dt>
+        <dd class="copy-row"><span class="hash" id="digest">{{ c.rubric_digest }}</span>
+          <button class="btn sm" data-copy="#digest">Copy</button></dd>
+        <dt>Netlist SHA-256</dt>
+        <dd class="copy-row"><span class="hash" id="netlist-sha">{{ c.netlist_sha256 }}</span>
+          <button class="btn sm" data-copy="#netlist-sha">Copy</button></dd>
+        <dt>Circuit size</dt><dd class="mono">{{ c.gates }} gates · {{ c.n_in }} in · {{ c.n_out }} out</dd>
+        <dt>Frozen at</dt><dd class="mono">{{ c.frozen_at or '—' }}</dd>
+      </dl>
+      <details>
+        <summary class="small">View the netlist ({{ c.netlist_hex|length // 2 - 1 }} bytes)</summary>
+        <div class="codeblock" id="netlist-hex">{{ c.netlist_hex }}</div>
+        <button class="btn sm" data-copy="#netlist-hex">Copy netlist</button>
+      </details>
+      {% else %}
+      <p class="muted">No rubric yet. <a href="{{ url_for('rubric', cid=c.id) }}">Configure one →</a></p>
+      {% endif %}
+    </div>
+
+    <div class="panel">
+      <h3>Publication state</h3>
+      <p><strong>{{ c.publication.label }}</strong></p>
+      <dl class="kv">
+        <dt>Chain id</dt><dd class="mono">{{ c.publication.chain_id or '—' }}</dd>
+        <dt>Processor</dt><dd class="hash">{{ c.publication.processor or '—' }}</dd>
+        <dt>Circuit id</dt><dd class="mono">{{ c.publication.circuit_id if c.publication.circuit_id is not none else '—' }}</dd>
+        <dt>Transaction</dt><dd class="hash">{{ c.publication.tx_hash or 'not sent' }}</dd>
+      </dl>
+      {% if c.status == 'draft' %}
+        <p class="muted">Freeze the rubric first.</p>
+      {% elif not c.publication.on_chain %}
+        <p class="small">A local circuit is <em>not</em> on chain. Publishing is a
+        funded, signed transaction the organiser's wallet must authorise — this
+        application prepares that call and stops at that boundary. It never sends
+        a transaction on your behalf.</p>
+        <form method="post" action="{{ url_for('publish', cid=c.id) }}">
+          <button class="btn primary" type="submit" name="action" value="publish">Prepare publication</button>
+        </form>
+      {% else %}
+        <p class="small">The circuit exists on X Layer. Its evaluation is a free
+        read; anyone can reproduce the score.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <div>
+    <div class="panel">
+      <h3>What freezing guarantees</h3>
+      <ul>
+        <li>The rule cannot be changed after this point.</li>
+        <li>Anyone can re-run the score for free.</li>
+        <li>Submitted judge scores cannot be edited.</li>
+      </ul>
+    </div>
+    <div class="notice warn">
+      <h3>What freezing does <em>not</em> guarantee</h3>
+      <ul>
+        <li>That judges scored fairly or independently.</li>
+        <li>That a judge is who they claim to be.</li>
+        <li>That the criteria you chose are the right ones.</li>
+      </ul>
+      <p class="small">TapeJudge makes the rule fixed and the arithmetic
+      reproducible. Conflicts of interest, bias and collusion are human problems
+      it does not solve — it makes the inputs auditable so a dispute is about
+      facts, not arithmetic.</p>
+    </div>
+    <div class="btn-row">
+      {% if c.status != 'draft' %}
+      <a class="btn" href="{{ url_for('submit', cid=c.id) }}">Submit entries →</a>
+      <a class="btn" href="{{ url_for('judge', cid=c.id) }}">Judge →</a>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

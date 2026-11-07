@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}TapeJudge{% endblock %}</title>
+  <meta name="description" content="Competition scoring whose rule is a frozen TapeOut circuit on X Layer — anyone can re-run the score for free.">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="{{ url_for('index') }}"><span class="mark">▤</span> TapeJudge</a>
+    <nav class="site" aria-label="Primary">
+      <a href="{{ url_for('index') }}">Competitions</a>
+      <a href="{{ url_for('new_competition') }}">New competition</a>
+      <a href="{{ url_for('api_health') }}">Status</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap" id="main">
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, msg in messages %}
+        <div class="notice {{ 'ok' if category == 'ok' else 'warn' if category == 'warn' else 'err' }}" role="status">
+          {{ msg }}
+        </div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+  {% block content %}{% endblock %}
+</main>
+
+<footer class="site">
+  <div class="wrap">
+    TapeJudge — the rubric is a machine you can run, not a promise you have to believe.
+    Scoring is computed locally by the same TAP-02 evaluator the X Layer contracts run.
+    {% block footer_extra %}{% endblock %}
+  </div>
+</footer>
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

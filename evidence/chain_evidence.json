@@ -1,0 +1,71 @@
+{
+  "beacon": "0xf70d1ed4f62cf3780157b0b421b7e2f45bd0991c",
+  "beacon_implementation": "0x977f217887e085d298cb3819cdad5a0ee35f29b2",
+  "beacon_owner": "0x0000000000000000000000000000000000000000",
+  "block_number": 75309342,
+  "captured_at": "2026-11-07T19:06:18Z",
+  "chain_id": 196,
+  "circuit_1_cross_check": {
+    "info": {
+      "gateCount": 4,
+      "nIn": 2,
+      "nOut": 1,
+      "nState": 0
+    },
+    "match": true,
+    "rows": [
+      {
+        "chain": "0x00",
+        "input": "0x00",
+        "local": "0x00",
+        "match": true
+      },
+      {
+        "chain": "0x01",
+        "input": "0x01",
+        "local": "0x01",
+        "match": true
+      },
+      {
+        "chain": "0x01",
+        "input": "0x02",
+        "local": "0x01",
+        "match": true
+      },
+      {
+        "chain": "0x00",
+        "input": "0x03",
+        "local": "0x00",
+        "match": true
+      }
+    ]
+  },
+  "circuit_layer_frozen": true,
+  "cpu_count": 415,
+  "factory": "0x1f09DAeFA827f02CBb40967cc91b259763760761",
+  "prepare_tapeout": {
+    "blocked_reason": null,
+    "chain_id": 196,
+    "circuit_id": 103,
+    "fee_known": true,
+    "fee_wei": 1300000000000000,
+    "mode": "onchain_pending_signature",
+    "netlist_bytes": 21588,
+    "netlist_sha256": "1a7f75ed1efb33542b36cfda36ed0ef78eb4e1a84238a86054fc4fa3227f63fd",
+    "note": "The frozen circuit is compiled and the tapeout call is prepared. Publishing it is a funded, signed transaction; the organiser's wallet must sign it. Nothing has been sent.",
+    "processor": "0x839bdd6fa7a66416a609a735e11de5411b98574e",
+    "tx_calldata_prefix": "0x7bd3ac1d0000000000000000000000000000000000000000000000000000000000000060\u2026",
+    "tx_unsigned": true
+  },
+  "processor_0": "0x839bdd6fa7a66416a609a735e11de5411b98574e",
+  "processor_0_next_id": 103,
+  "rpc": "https://rpc.xlayer.tech",
+  "sample_rubric": {
+    "digest": "6dd54ffa4091c17cf9963edf42d6c1fa97b2e8c3799b7484cb58a9a07bb251de",
+    "gates": 3084,
+    "n_in": 33,
+    "n_out": 33,
+    "netlist_bytes": 21588,
+    "netlist_sha256": "1a7f75ed1efb33542b36cfda36ed0ef78eb4e1a84238a86054fc4fa3227f63fd"
+  }
+}

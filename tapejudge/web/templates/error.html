@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}{{ code }} · TapeJudge{% endblock %}
+{% block content %}
+<div class="page-head"><h1>{{ code }}</h1></div>
+<div class="notice err" role="alert">
+  <p>{{ message }}</p>
+</div>
+<p><a class="btn" href="{{ url_for('index') }}">← Back to competitions</a></p>
+{% endblock %}
