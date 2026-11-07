@@ -77,6 +77,21 @@ The image runs as a non-root user, keeps the SQLite file on a named volume, and
 refuses to start without `TAPEJUDGE_SECRET` (or with the dev-only escape set).
 See `docker-compose.yml` and `docs/TAPEJUDGE_PRODUCTION_DEPLOYMENT_PLAN.md`.
 
+### Run it on a single-instance host
+
+For a host with a persistent disk (a VM, or a runtime that maps a port to a
+public URL), `scripts/serve_public.sh` runs the same production shape: it
+enforces the secret invariant, stores the secret and the database on the
+persistent path, seeds the SYNTHETIC demo once, and serves with gunicorn.
+
+```bash
+TAPEJUDGE_DATA_DIR=/var/lib/tapejudge TAPEJUDGE_PORT=12000 \
+  sh scripts/serve_public.sh
+```
+
+Set `TAPEJUDGE_DATABASE_URL` instead to run against a durable Postgres store on
+a host that has no persistent disk (see the deployment plan).
+
 ---
 
 ## The eight screens
@@ -140,6 +155,7 @@ tapejudge/
         # Vendored, verified Mission 3 core. Pure Python, dependency-free.
         # Byte-faithful copies; do not reformat.
   store.py        # SQLite persistence. One file; no server.
+  store_pg.py     # Postgres persistence. Same interface; for a shared host.
   service.py      # TapeJudgeService: every integrity rule lives here.
   xlayer.py       # Read-only X Layer client + prepare_tapeout().
   seed.py         # SYNTHETIC demonstration data.
@@ -147,7 +163,7 @@ tapejudge/
     app.py        # Flask app, routes, JSON API.
     templates/    # The eight screens.
     static/       # CSS, a little progressive-enhancement JS, favicon.
-tests/            # Unit + web + integration + deployment tests (219).
+tests/            # Unit + web + integration + deployment tests (237).
 demo/run_demo.py  # End-to-end demonstration.
 scripts/          # capture_chain_evidence.py
 evidence/         # chain_evidence.json — read-only proof, reproducible.
@@ -181,6 +197,7 @@ evaluator agrees with the chain. They never send a transaction.
 | Variable | Default | Meaning |
 |---|---|---|
 | `TAPEJUDGE_DB` | `:memory:` | SQLite path. Use a file for persistence. |
+| `TAPEJUDGE_DATABASE_URL` | unset | A PostgreSQL DSN. When set, the durable Postgres store is used instead of SQLite (needs `pip install -e '.[server]'`). |
 | `TAPEJUDGE_HOST` / `TAPEJUDGE_PORT` | `127.0.0.1` / `8080` | Dev server bind. |
 | `TAPEJUDGE_SECRET` | a per-process random value | Flask session key. Set a real one in production; the app refuses a fixed default. |
 | `TAPEJUDGE_SKIP_CHAIN` | unset | `1` skips the live chain tests. |

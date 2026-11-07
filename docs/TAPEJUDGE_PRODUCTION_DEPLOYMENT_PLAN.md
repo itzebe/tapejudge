@@ -113,6 +113,17 @@ WantedBy=multi-user.target
 
 ## 5. Data, backup, durability
 
+Two interchangeable stores back the app (selected by configuration):
+
+- **SQLite** (default) — one file; durable on a single host with a persistent
+  disk. Back it up as below.
+- **Postgres** (`TAPEJUDGE_DATABASE_URL`) — the durable option for a host with
+  no persistent filesystem (a serverless platform) or for more than one
+  instance. Install the driver with `pip install -e '.[server]'`. Migrations run
+  on first use; the schema is created if absent.
+
+The store of *inputs* is the record of the competition, so it must be durable.
+
 - **Backup** the SQLite file (and its `-wal`/`-shm` companions) on a schedule.
   A safe online backup: `sqlite3 tapejudge.db ".backup /backups/tapejudge-$(date +%F).db"`.
 - **WAL mode** is enabled by the app; keep the `-wal` file with the DB.
@@ -125,8 +136,11 @@ WantedBy=multi-user.target
 The application has no per-user server session; every handler is a function of
 its request. To run more than one instance:
 
-1. Replace SQLite with a shared store (e.g. Postgres). `Store` is the single
-   abstraction; a Postgres implementation behind the same methods is the change.
+1. **Set `TAPEJUDGE_DATABASE_URL` to a Postgres DSN.** The shared store is
+   already implemented (`tapejudge/store_pg.py`, behind the same `Store`
+   interface) and exercised by the same behavioural contract as SQLite
+   (`tests/test_store_contract.py`, run with `TAPEJUDGE_TEST_DATABASE_URL` set).
+   `make_store()` selects it automatically from the DSN.
 2. Replace the in-process `RateLimiter` with a shared one (e.g. a Redis counter
    or a proxy-level limiter), because the current limiter's state is per process.
 3. Keep the read-only X Layer access as-is (it is stateless).
