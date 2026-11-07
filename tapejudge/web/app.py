@@ -54,7 +54,7 @@ from ..service import (
     ValidationError,
     _as_int,
 )
-from ..store import Store
+from ..store import make_store
 from ..xlayer import XLayerClient
 from .ratelimit import RateLimiter
 
@@ -70,7 +70,7 @@ def create_app(*, db_path: str | None = None, chain_client=None,
     _configure_sessions(app)
     app.config["TESTING"] = testing
     db = db_path or os.environ.get("TAPEJUDGE_DB", ":memory:")
-    store = Store(db)
+    store = make_store(db)
     app.config["STORE"] = store
     app.config["SERVICE"] = TapeJudgeService(store, chain_client=chain_client)
     app.config["CHAIN"] = chain_client or XLayerClient()

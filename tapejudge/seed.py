@@ -17,7 +17,7 @@ from __future__ import annotations
 import sys
 
 from .service import TapeJudgeService
-from .store import Store
+from .store import make_store
 
 SYNTHETIC_NAME = "SYNTHETIC — Demo Judging Round"
 
@@ -56,7 +56,7 @@ SCORES = {
 
 
 def seed(db_path: str = ":memory:", *, chain_client=None) -> dict:
-    store = Store(db_path)
+    store = make_store(db_path)
     svc = TapeJudgeService(store, chain_client=chain_client)
     cid = svc.create_competition(
         name=SYNTHETIC_NAME,
@@ -95,7 +95,7 @@ def seed_journey(db_path: str = ":memory:", *, chain_client=None) -> dict:
     the organiser, a frozen rubric, entries submitted by the entrant, an accepted
     judge invitation, and a committed score. Every value is synthetic.
     """
-    store = Store(db_path)
+    store = make_store(db_path)
     svc = TapeJudgeService(store, chain_client=chain_client)
     accounts = {}
     for key, (email, name) in DEMO_ACCOUNTS.items():

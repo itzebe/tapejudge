@@ -22,6 +22,10 @@ tapejudge = ["web/templates/*.html", "web/static/*"]
 
 [project.optional-dependencies]
 dev = ["ruff>=0.6"]
+# The durable, shared store used by a hosted deployment (a serverless instance
+# has no persistent filesystem). Local use and the test suite need only SQLite,
+# which ships with Python.
+server = ["psycopg[binary]>=3.2"]
 
 [project.scripts]
 tapejudge = "tapejudge.web.app:main"

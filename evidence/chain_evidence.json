@@ -2,8 +2,8 @@
   "beacon": "0xf70d1ed4f62cf3780157b0b421b7e2f45bd0991c",
   "beacon_implementation": "0x977f217887e085d298cb3819cdad5a0ee35f29b2",
   "beacon_owner": "0x0000000000000000000000000000000000000000",
-  "block_number": 75322480,
-  "captured_at": "2026-11-07T22:45:15Z",
+  "block_number": 75326296,
+  "captured_at": "2026-11-07T23:48:52Z",
   "chain_id": 196,
   "circuit_1_cross_check": {
     "info": {

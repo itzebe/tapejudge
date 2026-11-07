@@ -90,9 +90,17 @@ def build(c, *, freeze=True, evaluate=True, app=None):
 
 
 def _tamper_scores(app, cid, value):
-    with app.config["STORE"]._conn() as conn:
-        conn.execute("UPDATE evaluations SET scores_json=? WHERE competition_id=?",
-                     (value, cid))
+    """Write a malformed score straight into the store, bypassing the service.
+
+    Uses the backend's own placeholder so the tamper works whether the app is
+    backed by the SQLite store (``?``) or the Postgres store (``%s``).
+    """
+    store = app.config["STORE"]
+    # ph is a literal ("%s" or "?") chosen by backend; no input reaches the SQL.
+    ph = "%s" if type(store).__module__.endswith("store_pg") else "?"
+    sql = f"UPDATE evaluations SET scores_json={ph} WHERE competition_id={ph}"  # noqa: S608
+    with store._conn() as conn:
+        conn.execute(sql, (value, cid))
 
 
 class TestNoRubricNavigation(unittest.TestCase):
