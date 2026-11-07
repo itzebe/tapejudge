@@ -137,6 +137,37 @@ Items 3–5 are deployment-shape decisions, not correctness defects.
   viewer-scoped entry visibility; plus V-16 (the organiser-route existence
   oracle). 196 tests pass; lint and dependency audit are clean.
 
+## 9b. Mission 7 — release review, deployment and final gate (2026-11-07)
+
+Baseline `32533d9`. A second adversarial pass over the release surface, the
+containerised production path, and the rendered interface.
+
+- **Three further defects fixed** (`TAPEJUDGE_VULNERABILITY_REGISTER.md` V-17…V-19):
+  a public-audit PII leak (a judge's email), an open redirect through `next=`, and
+  a 13×13 checkbox tap target. Each has a regression test.
+- **Containerised deployment** (`Dockerfile`, `scripts/docker-entrypoint.sh`,
+  `docker-compose.yml`): non-root uid 10001, `/data` volume, `HEALTHCHECK` on
+  `/api/health`, and a hard refusal to start without `TAPEJUDGE_SECRET` or with
+  the dev-only escape set. `tests/test_deployment.py` pins the gates.
+- **The production runtime path was exercised directly** (gunicorn behind the
+  entrypoint, not just `flask run`): health `200`, security headers present, and
+  the full 13-step user journey passes against it.
+- **Rendered-pixel sweep**: 21/21 page/width combinations (7 pages ×
+  390/768/1440px) pass overflow, contrast, tap-target, heading-order, alt-text and
+  control-name checks.
+
+## 9c. Final gate (2026-11-07)
+
+| Check | Command | Result |
+|---|---|---|
+| Unit + web + integration + deployment | `python3 -m unittest discover -s tests` (network) | **219 passed, 0 skipped** |
+| Offline suite | `TAPEJUDGE_SKIP_CHAIN=1 …` | 219 passed, 8 skipped |
+| Lint | `python3 -m ruff check .` | clean |
+| Dependency audit | `python3 -m pip_audit` | no known vulnerabilities |
+| Rendered sweep | `scripts/a11y_audit.mjs` | 21/21 |
+| Live X Layer reads | `XLayerClient` | reachable; block 75,322,153; 415 processors; local evaluator == on-chain `eval` for circuits 1–3 |
+| Production path | entrypoint + gunicorn | health 200; journey 13/13 |
+
 ## 10. Bottom line
 
 The MVP is a **solid, honest, reproducible product** whose central integrity

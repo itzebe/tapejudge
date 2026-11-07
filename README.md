@@ -66,6 +66,17 @@ python -m tapejudge.seed ./tapejudge.db
 Everything the seeder writes is labelled `SYNTHETIC` and is invented for
 demonstration — no real users, judges, entries or scores.
 
+### Run it in a container
+
+```bash
+TAPEJUDGE_SECRET=$(python3 -c "import secrets;print(secrets.token_hex(32))") \
+  docker compose up -d --build      # serves http://127.0.0.1:8080
+```
+
+The image runs as a non-root user, keeps the SQLite file on a named volume, and
+refuses to start without `TAPEJUDGE_SECRET` (or with the dev-only escape set).
+See `docker-compose.yml` and `docs/TAPEJUDGE_PRODUCTION_DEPLOYMENT_PLAN.md`.
+
 ---
 
 ## The eight screens
@@ -136,11 +147,12 @@ tapejudge/
     app.py        # Flask app, routes, JSON API.
     templates/    # The eight screens.
     static/       # CSS, a little progressive-enhancement JS, favicon.
-tests/            # Unit + web + integration tests (135).
+tests/            # Unit + web + integration + deployment tests (219).
 demo/run_demo.py  # End-to-end demonstration.
 scripts/          # capture_chain_evidence.py
 evidence/         # chain_evidence.json — read-only proof, reproducible.
-docs/             # Integration status, architecture notes, Mission 5 review.
+docs/             # Architecture, integration status, threat model, security
+        # reviews, vulnerability register, release readiness, deploy plan.
 ```
 
 ---
