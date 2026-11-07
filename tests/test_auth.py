@@ -36,7 +36,7 @@ from tests.authtestkit import (
 
 
 class _StubChain:
-    def prepare_tapeout(self, netlist, n_in, n_out):
+    def prepare_tapeout(self, netlist, n_in, n_out, n_gates=None):
         return {"mode": "local_only", "chain_id": 196, "processor": None,
                 "circuit_id": None, "tx": None, "fee_wei": None, "fee_known": False,
                 "netlist_bytes": len(netlist), "note": "stub", "blocked_reason": None}

@@ -24,7 +24,7 @@ from tests.authtestkit import build_competition, login, logout, post
 
 
 class _StubChain:
-    def prepare_tapeout(self, netlist, n_in, n_out):
+    def prepare_tapeout(self, netlist, n_in, n_out, n_gates=None):
         return {"mode": "onchain_pending_signature", "chain_id": 196,
                 "processor": "0xstubprocessor", "circuit_id": 7,
                 "tx": {"unsigned": True}, "fee_wei": None, "fee_known": False,

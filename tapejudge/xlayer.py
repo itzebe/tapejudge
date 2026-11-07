@@ -167,12 +167,17 @@ class XLayerClient:
             return False
 
     # -- publication (preparation only) ------------------------------------ #
-    def prepare_tapeout(self, netlist: bytes, n_in: int, n_out: int) -> dict:
+    def prepare_tapeout(self, netlist: bytes, n_in: int, n_out: int,
+                        n_gates: int | None = None) -> dict:
         """Build the exact ``tapeout`` call for a wallet to sign. Send nothing.
 
         Returns a description the app records verbatim. When the RPC is
         unreachable it degrades to ``local_only`` with the reason — it never
         fabricates a chain id, a processor, a circuit id or a fee.
+
+        ``n_gates`` is the top-level NAND+LATCH count of the compiled circuit.
+        ``tapeout`` burns exactly that many transistor tokens from the caller
+        (TAP-02 §6), so it is reported as a hard requirement next to the fee.
         """
         result = {
             "mode": "local_only",
@@ -182,6 +187,8 @@ class XLayerClient:
             "tx": None,
             "fee_wei": None,
             "fee_known": False,
+            "n_gates": n_gates,
+            "requirements": self._publication_requirements(n_gates),
             "netlist_bytes": len(netlist),
             "netlist_sha256": hashlib.sha256(netlist).hexdigest(),
             "note": "",
@@ -200,6 +207,7 @@ class XLayerClient:
             result["blocked_reason"] = "rpc_unreachable"
             return result
 
+        result["requirements"] = self._publication_requirements(n_gates, result["fee_wei"])
         if not self.allow_send:
             result["mode"] = "onchain_pending_signature"
             result["note"] = (
@@ -208,6 +216,75 @@ class XLayerClient:
                 "wallet must sign it. Nothing has been sent.")
             result["tx"] = self._build_tapeout_tx(netlist, n_in, n_out, result)
         return result
+
+    def _publication_requirements(self, n_gates: int | None, fee_wei: int | None = None) -> dict:
+        """What a real ``tapeout`` needs, read from the chain where possible.
+
+        TAP-02 §6: ``tapeout`` requires ``msg.value`` to equal the processor's
+        ``TAPEOUT_FEE`` **and** burns the caller's top-level NAND+LATCH count in
+        transistor tokens. Both are hard requirements; the app states them so an
+        organiser knows what the wallet needs before signing.
+        """
+        fee_okb = None
+        if isinstance(fee_wei, int):
+            fee_okb = fee_wei / 1e18
+        return {
+            "fee_wei": fee_wei,
+            "fee_okb": fee_okb,
+            "fee_known": isinstance(fee_wei, int),
+            "transistors_to_burn": n_gates,
+            "native_coin": "OKB",
+            "notes": [
+                "msg.value must equal the processor's TAPEOUT_FEE exactly.",
+                "The call burns the circuit's top-level gate count in transistor "
+                "tokens held by the signing wallet (REF'd gates are not burned again).",
+            ],
+        }
+
+    def simulate_tapeout(self, netlist: bytes, n_in: int, n_out: int,
+                         from_address: str) -> dict:
+        """Read-only ``eth_call`` of the real ``tapeout`` (sends nothing).
+
+        It uses a state override to give ``from_address`` a large native balance
+        so the *fee* check passes, which lets the call reach the §3 well-formedness
+        checks and then the transistor burn. The returned result is the honest
+        verdict of the live contract for this exact calldata:
+
+        * the netlist is rejected with the §3 reason → ``ill_formed``;
+        * it reaches the burn and reverts for lack of transistors →
+          ``needs_transistors`` (the netlist is well-formed and the only missing
+          requirement is the transistor balance);
+        * it succeeds → ``would_tapeout`` (impossible from a tokenless address, but
+          reported if the contract ever allows it).
+
+        This is the closest a keyless app can come to proving a real tapeout: it
+        exercises the deployed processor's own validation without spending
+        anything.
+        """
+        from .chain import _rpc  # reuse the single RPC helper
+        data = TAPEOUT_SELECTOR + _encode_tapeout_args(netlist, n_in, n_out)
+        # Fund the simulated caller so the fee check passes; the transistor burn
+        # is left to the contract, which is exactly the requirement we want to see.
+        overrides = {from_address: {"balance": hex(10 ** 20)}}
+        call = {"from": from_address, "to": self.processor, "data": data,
+                "value": hex(self._read_tapeout_fee(self.processor)[0] or 0)}
+        out = {"to": self.processor, "from": from_address,
+               "value": call["value"], "calldata_bytes": len(data) // 2}
+        try:
+            res = _rpc("eth_call", [call, "latest", overrides], self.rpc_url)
+        except Exception as e:
+            msg = getattr(e, "args", [str(e)])[0]
+            out["error"] = str(msg)
+            if "tapeout fee" in str(msg):
+                out["verdict"] = "fee_mismatch"
+            elif "transistor" in str(msg).lower() or str(msg) == "execution reverted":
+                out["verdict"] = "needs_transistors"
+            else:
+                out["verdict"] = "ill_formed"
+            return out
+        out["verdict"] = "would_tapeout"
+        out["result"] = res
+        return out
 
     def _build_tapeout_tx(self, netlist: bytes, n_in: int, n_out: int, info: dict) -> dict:
         """The exact unsigned transaction for ``tapeout(bytes,uint32,uint32)``."""

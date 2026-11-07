@@ -41,6 +41,10 @@
         <dt>Processor</dt><dd class="hash">{{ c.publication.processor or '—' }}</dd>
         <dt>Circuit id</dt><dd class="mono">{{ c.publication.circuit_id if c.publication.circuit_id is not none else '—' }}</dd>
         <dt>Transaction</dt><dd class="hash">{{ c.publication.tx_hash or 'not sent' }}</dd>
+        {% if c.publication.mode == 'onchain_pending_signature' %}
+        <dt>Tape-out fee</dt><dd class="mono">{% if c.publication.fee_okb is not none %}{{ '%.4f'|format(c.publication.fee_okb) }} OKB{% else %}read from the processor when the RPC is reachable{% endif %}</dd>
+        <dt>Transistors to burn</dt><dd class="mono">{{ c.publication.transistors_to_burn if c.publication.transistors_to_burn is not none else '—' }}</dd>
+        {% endif %}
       </dl>
       {% if c.status == 'draft' %}
         <p class="muted">Freeze the rubric first.</p>
@@ -49,6 +53,13 @@
         funded, signed transaction the organiser's wallet must authorise — this
         application prepares that call and stops at that boundary. It never sends
         a transaction on your behalf.</p>
+        <div class="notice">
+          <p class="small">A real <span class="mono">tapeout</span> needs three
+          things from the signing wallet: the processor's <span class="mono">TAPEOUT_FEE</span>
+          in OKB as <span class="mono">msg.value</span> (exact), <strong>{{ c.publication.transistors_to_burn if c.publication.transistors_to_burn is not none else 'the gate count' }}</strong>
+          transistor tokens to burn (TAP-02 §6), and gas. Nothing here is sent by
+          this app.</p>
+        </div>
         <form method="post" action="{{ url_for('publish', cid=c.id) }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <button class="btn primary" type="submit" name="action" value="publish">Prepare publication</button>

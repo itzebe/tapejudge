@@ -29,7 +29,7 @@ from .engine import Competition, JudgeEvaluation, ScoringError
 from .netlist import encode
 from .rubric import Criterion, Rubric, compile_rubric
 from .store import DuplicateError, Store
-from .xlayer import XLayerClient
+from .xlayer import X_LAYER_CHAIN_ID, XLayerClient
 
 # Publication modes. Only the first two are "published"; the rest are honest
 # states, never dressed up as an on-chain circuit.
@@ -249,21 +249,34 @@ class TapeJudgeService:
                               "netlist_sha256": comp["netlist_sha256"]})
         return self.get_competition(cid)
 
-    def publish(self, cid: str) -> dict:
-        """Attempt to publish the frozen circuit.
+    def publish(self, cid: str, *, simulate_from: str | None = None) -> dict:
+        """Prepare the on-chain publication of the frozen circuit.
 
         The MVP records the frozen rubric and its netlist locally and reports the
         exact publication state. A real on-chain publication needs a funded
-        wallet and a signed transaction, which is an authorisation boundary: when
-        one is configured the service builds the *unsigned* ``tapeout`` call and
-        stops, reporting ``onchain_pending_signature``. It never sends a
-        transaction and never labels a local circuit as on-chain.
+        wallet, the processor's ``TAPEOUT_FEE`` in OKB **and** transistor tokens to
+        burn (TAP-02 §6), plus a signed transaction — an authorisation boundary.
+        The service builds the *unsigned* ``tapeout`` call and stops, reporting
+        ``onchain_pending_signature``. It never sends a transaction and never
+        labels a local circuit as on-chain.
+
+        ``simulate_from`` additionally runs the read-only ``eth_call`` simulation
+        of the real ``tapeout`` (see ``XLayerClient.simulate_tapeout``) so the app
+        can report the live contract's verdict on this exact netlist without
+        spending anything.
         """
         comp = self._require(cid)
         if comp["status"] == "draft":
             raise ValidationError("freeze the rubric before publishing")
         netlist = bytes.fromhex(comp["netlist_hex"][2:])
-        prepared = self.chain.prepare_tapeout(netlist, comp["n_in"], comp["n_out"])
+        prepared = self.chain.prepare_tapeout(
+            netlist, comp["n_in"], comp["n_out"], n_gates=comp.get("gates"))
+        if simulate_from:
+            try:
+                prepared["simulation"] = self.chain.simulate_tapeout(
+                    netlist, comp["n_in"], comp["n_out"], simulate_from)
+            except Exception as e:  # a simulation must never break preparation
+                prepared["simulation"] = {"verdict": "unavailable", "error": str(e)}
         self.store.record_publication(
             cid, chain_id=prepared["chain_id"],
             processor=prepared["processor"] or None,
@@ -273,6 +286,44 @@ class TapeJudgeService:
         self.store.log_event(cid, "publication_recorded",
                              {"mode": prepared["mode"], "chain_id": prepared["chain_id"]})
         return prepared
+
+    def tapeout_integration_state(self) -> dict:
+        """The honest, machine-readable state of the X Layer integration.
+
+        One of the campaign's required labels, chosen from what the code can
+        actually do — never from what would look best. This is what the UI and the
+        hackathon evidence read, so they cannot drift.
+        """
+        reachable = False
+        processor = None
+        circuit_id = None
+        fee_wei = None
+        try:
+            reachable = self.chain.is_reachable()
+            if reachable:
+                prepared = self.chain.prepare_tapeout(b"", 0, 1)
+                processor = prepared.get("processor")
+                circuit_id = prepared.get("circuit_id")
+                fee_wei = prepared.get("fee_wei")
+        except Exception:
+            reachable = False
+        return {
+            "state": "PREPARED_BUT_AWAITING_AUTHORISATION",
+            "label": "Prepared but awaiting authorisation",
+            "chain_id": X_LAYER_CHAIN_ID,
+            "rpc_reachable": reachable,
+            "processor": processor,
+            "next_circuit_id": circuit_id,
+            "tapeout_fee_wei": fee_wei,
+            "reads_verified_live": reachable,
+            "send_enabled": bool(getattr(self.chain, "allow_send", False)),
+            "note": (
+                "Reads (cpuCount, cpuAt, nextId, circuitInfo, netlist, eval) are "
+                "verified live on X Layer. Publication builds the exact unsigned "
+                "tapeout call and stops: it needs a funded, signed transaction "
+                "from the organiser's wallet, the processor TAPEOUT_FEE in OKB and "
+                "transistor tokens to burn. Nothing is sent by the application."),
+        }
 
     # -- entries ------------------------------------------------------------ #
     def add_entry(self, cid: str, *, stable_id, title, summary="", link="",
@@ -844,6 +895,8 @@ class TapeJudgeService:
             "tx_hash": comp.get("tx_hash"),
             "published_at": comp.get("published_at"),
             "fee_wei": comp.get("fee_wei"),
+            "fee_okb": (int(comp["fee_wei"]) / 1e18) if comp.get("fee_wei") else None,
+            "transistors_to_burn": comp.get("gates"),
             "on_chain": mode == PUBLISH_ONCHAIN_VERIFIED,
         }
 

@@ -552,6 +552,11 @@ def _register_routes(app: Flask) -> None:
     def api_health():
         return jsonify({"ok": True, "chain_reachable": app.config["CHAIN"].is_reachable()})
 
+    @app.get("/api/integration")
+    def api_integration():
+        """The honest state of the X Layer TapeOut integration (public read)."""
+        return jsonify(_svc().tapeout_integration_state())
+
     @app.get("/api/me")
     def api_me():
         if g.account is None:

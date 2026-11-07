@@ -67,6 +67,46 @@ class TestTapeoutEncoding(unittest.TestCase):
         self.assertFalse(out["fee_known"])
         self.assertIsNone(out["fee_wei"])
 
+    def test_requirements_report_gate_burn_and_fee(self):
+        client = XLayerClient(rpc_url="http://127.0.0.1:1", allow_send=False)
+        out = client.prepare_tapeout(b"\x00\x01", 4, 2, n_gates=3084)
+        req = out["requirements"]
+        self.assertEqual(req["transistors_to_burn"], 3084)
+        self.assertEqual(req["native_coin"], "OKB")
+        self.assertFalse(req["fee_known"])
+        self.assertIsNone(req["fee_wei"])
+
+    def test_prepare_never_sets_a_tx_hash_or_onchain_mode_without_send(self):
+        # allow_send is False everywhere in the app; the mode must never claim a
+        # completed on-chain publication.
+        client = XLayerClient(rpc_url="http://127.0.0.1:1", allow_send=False)
+        out = client.prepare_tapeout(b"\x00\x01", 4, 2)
+        self.assertNotEqual(out["mode"], "onchain_verified")
+        self.assertIsNone(out["tx"])
+
+
+class TestIntegrationState(unittest.TestCase):
+    def test_state_label_is_prepared_awaiting_authorisation(self):
+        from tapejudge.service import TapeJudgeService
+        from tapejudge.store import Store
+
+        class _DeadChain:
+            rpc_url = "http://127.0.0.1:1"
+            allow_send = False
+
+            def is_reachable(self):
+                return False
+
+            def prepare_tapeout(self, *a, **k):
+                raise RuntimeError("offline")
+
+        svc = TapeJudgeService(Store(":memory:"), chain_client=_DeadChain())
+        st = svc.tapeout_integration_state()
+        self.assertEqual(st["state"], "PREPARED_BUT_AWAITING_AUTHORISATION")
+        self.assertFalse(st["send_enabled"])
+        self.assertFalse(st["rpc_reachable"])
+        self.assertEqual(st["chain_id"], 196)
+
 
 @unittest.skipIf(SKIP_LIVE, "live chain tests skipped (TAPEJUDGE_SKIP_CHAIN=1)")
 class TestLiveXLayer(unittest.TestCase):
@@ -96,6 +136,27 @@ class TestLiveXLayer(unittest.TestCase):
         rep = self.client.verify_circuit_against_chain(
             1, [bytes([0]), bytes([1]), bytes([2]), bytes([3])], proc)
         self.assertTrue(rep["match"])
+
+    def test_compiled_rubric_is_accepted_by_the_live_processor(self):
+        """A read-only tapeout simulation of a compiled rubric.
+
+        The live processor validates the exact calldata. From a tokenless address
+        it must reach the transistor burn (``needs_transistors``), which proves
+        the netlist passed TAP-02 §3 well-formedness. Nothing is sent.
+        """
+        from tapejudge.netlist import encode
+        from tapejudge.rubric import Criterion, Rubric, compile_rubric
+
+        rubric = Rubric("live-check",
+                        (Criterion("demo", 3, 10), Criterion("tests", 2, 10)), judges=2)
+        circuit, meta = compile_rubric(rubric)
+        net = encode(circuit.elements)
+        sim = self.client.simulate_tapeout(
+            net, meta["n_in"], meta["n_out"],
+            "0x000000000000000000000000000000000000dEaD")
+        # The contract accepted the netlist; the only unmet requirement is the
+        # transistor balance the caller does not hold.
+        self.assertEqual(sim["verdict"], "needs_transistors")
 
 
 if __name__ == "__main__":

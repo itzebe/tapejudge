@@ -60,11 +60,21 @@ def main() -> int:
     }
 
     # The publication preparation (never a send).
-    prepared = client.prepare_tapeout(net, meta["n_in"], meta["n_out"])
+    prepared = client.prepare_tapeout(net, meta["n_in"], meta["n_out"],
+                                      n_gates=circuit.n_gates)
     out["prepare_tapeout"] = {k: v for k, v in prepared.items() if k != "tx"}
     if prepared.get("tx"):
         out["prepare_tapeout"]["tx_calldata_prefix"] = prepared["tx"]["data"][:74] + "…"
         out["prepare_tapeout"]["tx_unsigned"] = prepared["tx"]["unsigned"]
+
+    # The read-only simulation of the real tapeout: the live processor validates
+    # this exact calldata. It sends nothing and spends nothing.
+    try:
+        out["simulate_tapeout"] = client.simulate_tapeout(
+            net, meta["n_in"], meta["n_out"],
+            from_address="0x000000000000000000000000000000000000dEaD")
+    except Exception as e:
+        out["simulate_tapeout"] = {"verdict": "unavailable", "error": str(e)}
 
     # An existing on-chain circuit, evaluated locally and on chain (a free read).
     try:

@@ -59,7 +59,7 @@ def score_all(svc, cid, scores=SCORES):
 class _StubChain:
     """A chain client that never touches the network. Returns honest state."""
 
-    def prepare_tapeout(self, netlist, n_in, n_out):
+    def prepare_tapeout(self, netlist, n_in, n_out, n_gates=None):
         return {"mode": "onchain_pending_signature", "chain_id": 196,
                 "processor": "0xstubprocessor", "circuit_id": 103,
                 "tx": {"unsigned": True}, "fee_wei": None, "fee_known": False,

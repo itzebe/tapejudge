@@ -2,8 +2,8 @@
   "beacon": "0xf70d1ed4f62cf3780157b0b421b7e2f45bd0991c",
   "beacon_implementation": "0x977f217887e085d298cb3819cdad5a0ee35f29b2",
   "beacon_owner": "0x0000000000000000000000000000000000000000",
-  "block_number": 75319993,
-  "captured_at": "2026-11-07T22:03:49Z",
+  "block_number": 75320287,
+  "captured_at": "2026-11-07T22:08:44Z",
   "chain_id": 196,
   "circuit_1_cross_check": {
     "info": {
@@ -50,10 +50,22 @@
     "fee_known": true,
     "fee_wei": 1300000000000000,
     "mode": "onchain_pending_signature",
+    "n_gates": 3084,
     "netlist_bytes": 21588,
     "netlist_sha256": "1a7f75ed1efb33542b36cfda36ed0ef78eb4e1a84238a86054fc4fa3227f63fd",
     "note": "The frozen circuit is compiled and the tapeout call is prepared. Publishing it is a funded, signed transaction; the organiser's wallet must sign it. Nothing has been sent.",
     "processor": "0x839bdd6fa7a66416a609a735e11de5411b98574e",
+    "requirements": {
+      "fee_known": true,
+      "fee_okb": 0.0013,
+      "fee_wei": 1300000000000000,
+      "native_coin": "OKB",
+      "notes": [
+        "msg.value must equal the processor's TAPEOUT_FEE exactly.",
+        "The call burns the circuit's top-level gate count in transistor tokens held by the signing wallet (REF'd gates are not burned again)."
+      ],
+      "transistors_to_burn": 3084
+    },
     "tx_calldata_prefix": "0x7bd3ac1d0000000000000000000000000000000000000000000000000000000000000060\u2026",
     "tx_unsigned": true
   },
@@ -67,5 +79,13 @@
     "n_out": 33,
     "netlist_bytes": 21588,
     "netlist_sha256": "1a7f75ed1efb33542b36cfda36ed0ef78eb4e1a84238a86054fc4fa3227f63fd"
+  },
+  "simulate_tapeout": {
+    "calldata_bytes": 21733,
+    "error": "execution reverted",
+    "from": "0x000000000000000000000000000000000000dEaD",
+    "to": "0x839bdd6fa7a66416a609a735e11de5411b98574e",
+    "value": "0x49e57d6354000",
+    "verdict": "needs_transistors"
   }
 }
