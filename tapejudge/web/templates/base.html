@@ -4,7 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}TapeJudge{% endblock %}</title>
-  <meta name="description" content="Competition scoring whose rule is a frozen TapeOut circuit on X Layer — anyone can re-run the score for free.">
+  <meta name="description" content="{% block description %}Competition scoring whose rule is a frozen TapeOut circuit on X Layer — anyone can re-run the score for free.{% endblock %}">
+  <meta property="og:site_name" content="TapeJudge">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="{{ self.title() }}">
+  <meta property="og:description" content="{{ self.description() }}">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="{{ self.title() }}">
+  <meta name="twitter:description" content="{{ self.description() }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
 </head>

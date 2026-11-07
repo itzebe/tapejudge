@@ -39,12 +39,21 @@ def rule(title: str) -> None:
 class _NoChain:
     """A chain client that refuses to pretend: it reports local-only, honestly."""
 
-    def prepare_tapeout(self, netlist, n_in, n_out):
+    def prepare_tapeout(self, netlist, n_in, n_out, n_gates=None):
         return {"mode": "local_only", "chain_id": 196, "processor": None,
                 "circuit_id": None, "tx": None, "fee_wei": None, "fee_known": False,
+                "n_gates": n_gates,
+                "requirements": {
+                    "fee_wei": None, "fee_okb": None, "fee_known": False,
+                    "transistors_to_burn": n_gates, "native_coin": "OKB",
+                    "notes": ["no chain client in this run"],
+                },
                 "netlist_bytes": len(netlist),
                 "netlist_sha256": hashlib.sha256(netlist).hexdigest(),
                 "note": "no chain client in this run", "blocked_reason": "no_client"}
+
+    def simulate_tapeout(self, netlist, n_in, n_out, sender):
+        return {"verdict": "unavailable", "error": "no chain client in this run"}
 
     def is_reachable(self):
         return False

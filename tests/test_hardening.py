@@ -336,6 +336,16 @@ class TestSecurityHeadersAndSecrets(unittest.TestCase):
         r = c.get("/api/health")
         self.assertEqual(r.headers.get("Cache-Control"), "no-store")
 
+    def test_social_preview_metadata_present(self):
+        # A shared link must render an honest preview card (the campaign is
+        # judged partly on reach). No image tag is claimed without an asset.
+        _app, c = make_client(testing=False)
+        html = c.get("/").get_data(as_text=True)
+        for needle in ('property="og:title"', 'property="og:description"',
+                       'name="twitter:card"', 'name="twitter:title"',
+                       'name="description"'):
+            self.assertIn(needle, html)
+
     def test_cookie_flags(self):
         app, _c = make_client(testing=False)
         self.assertTrue(app.config["SESSION_COOKIE_HTTPONLY"])
