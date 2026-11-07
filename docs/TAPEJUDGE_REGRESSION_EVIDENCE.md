@@ -4,6 +4,15 @@ Research date **2026-11-07**. All commands were run in `/workspace/tapejudge`
 on the reviewed working tree (baseline `f3c229a`). Every result below is a real
 capture, not a claim.
 
+> **Mission 7 update (2026-11-07, baseline `32533d9`).** The suite is now **219
+> tests**. Added: `tests/test_deployment.py` (container/entrypoint gates), the
+> Mission 7 security regressions (audit PII, open redirect, checkbox target).
+> Final gate: `python3 -m unittest discover -s tests` → **219 passed, 0 skipped**;
+> `TAPEJUDGE_SKIP_CHAIN=1 …` → 219 passed, 8 skipped; `ruff check .` clean;
+> `pip-audit` no known vulnerabilities; rendered sweep 21/21; live X Layer reads
+> verified (block 75,322,153; local evaluator == on-chain `eval` for circuits 1–3);
+> production entrypoint + gunicorn → health 200, journey 13/13.
+
 ---
 
 ## 1. Test suites
