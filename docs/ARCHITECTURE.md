@@ -76,13 +76,58 @@ audit_events(id, competition_id, kind, payload_json, created_at)
 one of `not_published`, `local_only`, `onchain_pending_signature`,
 `onchain_verified` — the app shows exactly which one is true.
 
+## Authentication and authorisation (Mission 6)
+
+Identity is a first-class layer now. The mechanism lives in `tapejudge/auth.py`
+and the *policy* lives in `service.py`, enforced at the route boundary in
+`web/app.py`.
+
+```
+        browser (session cookie)
+           │
+     ┌─────▼──────┐
+     │ auth.py    │  mechanism: password hashing (scrypt), session + epoch,
+     │            │  CSRF token, login throttle. Never reads identity from a body.
+     └─────┬──────┘
+           │ g.account  (resolved once per request)
+     ┌─────▼──────────┐
+     │ service.py     │  policy: require_organiser, judge_label, viewer-aware
+     │                │  entry visibility. One AuthError for "unknown" and
+     └────────────────┘  "not yours".
+```
+
+Rules:
+
+* **Identity is taken only from the session.** A role, judge id or account id in
+  a request body is never read as a fact. `g.account` is resolved once in
+  `before_request` via `auth.current_account(session, store)`.
+* **CSRF is enforced centrally** (`_csrf_guard`): every non-safe method needs the
+  session token, so a new write route cannot be added without it.
+* **A session is re-validated every request** against the account's
+  `session_epoch`, so a logout-everywhere or a password change invalidates it.
+  Login rotates the session id and CSRF token (defeats session fixation).
+* **Object-level authorisation, not just authentication.** `require_organiser`
+  raises the *same* `AuthError` for an unknown competition and a foreign one, so
+  a response cannot be used to probe which competitions exist. Every organiser
+  HTML route lets that error reach the central handler (404, byte-identical to an
+  unknown id); the `/api/*` form is a uniform 403.
+* **A judge scores only under their own membership label.** `evaluate` and
+  `declare_conflict` take `judge_account_id` and require the membership to match
+  the label; a label put in the request is ignored.
+* **Private entries are viewer-scoped.** `get_entry` / `list_entries` take
+  `viewer_account_id`; the owner and the submitter see private fields, everyone
+  else sees a redacted view. Public verification never leaks a private title.
+* **Verification stays public.** All read routes — including `/verify`,
+  `/results` and their `/api` forms — require no account. That is the product's
+  promise and it is unchanged.
+
 ## Extension points
 
 * **A real signer.** `xlayer.py` `prepare_tapeout` already returns the exact
   unsigned transaction. A future `publish` could hand it to a wallet; the app
   would then move `publish_mode` to `onchain_verified` only after a real receipt.
-* **Authentication.** Today a judge is an identifier, not a verified identity.
-  Adding a login would tighten `evaluate`'s "is this the right judge" check
-  without changing the scoring core.
+* **Email delivery for invitations.** An invitation token is shown once and only
+  its SHA-256 is stored; a mailer would send the link instead of the organiser
+  copying it out of band.
 * **A shared store.** SQLite is fine for one instance; a multi-instance
   deployment swaps `store.py` for a networked database behind the same interface.

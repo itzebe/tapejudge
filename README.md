@@ -182,17 +182,22 @@ evaluator agrees with the chain. They never send a transaction.
 
 This is a functional MVP, not a production service.
 
-* **No authentication.** Judge identity is a recorded identifier, not a verified
-  login. The app says so wherever it matters. Adding real auth is the first
-  hardening step before any real competition — see
-  `docs/TAPEJUDGE_RELEASE_READINESS.md`.
+* **Accounts and authorisation are implemented (Mission 6).** Organisers,
+  entrants and judges sign in with an email and password (scrypt-hashed); every
+  write requires a session and a CSRF token; a judge scores only under the label
+  bound to their account; an organiser acts only on their own competition; and
+  public verification stays anonymous. What is **not** proven is fairness: the
+  app shows *which account* submitted a score, not whether that judge was fair.
+  See `docs/MISSION6_SECURITY_REVIEW.md`.
 * **The MVP caps a panel at 25 judges** and uses integer scores.
 * **Publication is prepared, not executed.** Wiring a signer is a deliberate,
   separate step that requires a human decision about keys.
 * **SQLite** is fine for one instance; a multi-instance deployment needs a
-  shared store.
+  shared store and a shared rate limiter.
 
-The Mission 5 independent review and its fixes are in `docs/MISSION5_SECURITY_REVIEW.md`
-(with the threat model, vulnerability register, regression evidence, release
-readiness and deployment plan alongside it). See `docs/` for the integration
-status and the evidence behind the chain numbers.
+The Mission 5 independent review and its fixes are in `docs/MISSION5_SECURITY_REVIEW.md`;
+the Mission 6 authentication and authorisation work is in
+`docs/MISSION6_SECURITY_REVIEW.md` (with the threat model, vulnerability
+register, regression evidence, release readiness and deployment plan alongside
+it). See `docs/` for the integration status and the evidence behind the chain
+numbers.

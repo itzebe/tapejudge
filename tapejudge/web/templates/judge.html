@@ -10,20 +10,16 @@
 </div>
 
 <div class="panel tight">
-  <form method="get" action="{{ url_for('judge', cid=c.id) }}" class="btn-row" style="margin:0">
-    <label for="judge-pick" style="margin:0">Judging as</label>
-    <select id="judge-pick" name="judge" onchange="this.form.submit()" style="max-width:320px">
-      <option value="">— choose a judge —</option>
-      {% for j in c.judges %}
-        <option value="{{ j }}" {% if j == judge %}selected{% endif %}>{{ j }}</option>
-      {% endfor %}
-    </select>
-    <noscript><button class="btn sm" type="submit">Switch</button></noscript>
-  </form>
+  <p class="small" style="margin:0">Signed in as <strong>{{ account.email }}</strong>.
+  {% if judge %}You are judging this competition under the identifier
+    <span class="mono">{{ judge }}</span> — every score you submit is recorded
+    against it.
+  {% else %}Your account is not on this competition's judging panel, so you cannot
+    score. An organiser invites a judge by email; accept the invitation to join.{% endif %}</p>
 </div>
 
 {% if not judge %}
-  <div class="empty"><p>Choose a judge to see the entries that judge must score.</p></div>
+  <div class="empty"><p>You are not a judge on this competition.</p></div>
 {% else %}
 <div class="split">
   <div>
@@ -45,11 +41,11 @@
     <div class="panel">
       <h3>Declare a conflict of interest</h3>
       <p class="hint">Recording a conflict stops this judge scoring that entry.
-      It does not prove the judge is impartial, and TapeJudge does not verify
-      judge identity.</p>
+      It does not prove the judge is impartial; TapeJudge verifies
+      <em>which account</em> acted, not whether that judge was fair.</p>
       <form method="post" action="{{ url_for('judge', cid=c.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="action" value="conflict">
-        <input type="hidden" name="judge" value="{{ judge }}">
         <div class="field">
           <label for="conflict-entry">Entry</label>
           <select id="conflict-entry" name="entry" required>
@@ -85,8 +81,8 @@
           <p class="muted small">You declared a conflict for this entry and cannot score it.</p>
         {% else %}
           <form method="post" action="{{ url_for('judge', cid=c.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <input type="hidden" name="action" value="score">
-            <input type="hidden" name="judge" value="{{ judge }}">
             <input type="hidden" name="entry" value="{{ e.stable_id }}">
             {% for crit in c.rubric.criteria %}
             <div class="field">

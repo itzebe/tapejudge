@@ -129,10 +129,19 @@
     <div class="notice info">
       <h3>What this proves, and what it does not</h3>
       <p class="small"><strong>Proves:</strong> given these committed scores, this
-      is the ranking, and the rule could not have changed. <strong>Does not
-      prove:</strong> that the scores were fair, that the judges were independent,
-      or that a judge is who they claim. Those are human problems; TapeJudge makes
-      the input auditable and the output reproducible.</p>
+      is the ranking, and the rule could not have changed. Each score records the
+      account that submitted it, bound to the judge identifier it scores under;
+      the verified-account count is shown honestly.
+      <strong>Does not prove:</strong> that the scores were fair or that the
+      judges were independent. Those are human problems; TapeJudge makes the
+      acting identity and the input auditable and the output reproducible.</p>
+      <p class="small">Scores with a verified account:
+      <strong>{{ rep.identity.authenticated }}</strong> of
+      {{ rep.identity.total }}.{% if rep.identity.unauthenticated %}
+      {{ rep.identity.unauthenticated }} score(s) were recorded before
+      authentication existed and carry only an identifier
+      ({{ rep.identity.unauthenticated_judges|join(', ') }}). They are reproduced
+      unchanged and marked here rather than hidden.{% endif %}</p>
     </div>
   </div>
 </div>

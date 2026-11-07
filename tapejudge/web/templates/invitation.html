@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Judge invitation · TapeJudge{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Judge invitation</h1>
+  {% if status == 'pending' and inv %}
+  <p class="sub">You have been invited to judge a competition. Accepting binds
+  your account to the judge identifier below; every score you submit will be
+  recorded against it.</p>
+  {% endif %}
+</div>
+
+{% if status == 'pending' and inv %}
+  <div class="panel">
+    <dl class="kv">
+      <dt>Judge identifier</dt><dd class="mono">{{ inv.label }}</dd>
+      <dt>Invited email</dt><dd class="mono">{{ inv.email }}</dd>
+      <dt>Expires</dt><dd class="mono">{{ inv.expires_at }}</dd>
+    </dl>
+    <p class="small">You are signed in as <strong>{{ account.email }}</strong>.
+    {% if account.email|lower != inv.email|lower %}
+      This invitation was addressed to a different email and cannot be accepted
+      from this account.
+    {% endif %}</p>
+    <form method="post" action="{{ url_for('accept_invitation', token=request.view_args.token) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="btn primary" type="submit"
+        {% if account.email|lower != inv.email|lower %}disabled{% endif %}>
+        Accept invitation</button>
+    </form>
+  </div>
+{% else %}
+  <div class="notice err" role="alert">
+    <p>This invitation is not valid — it may have been used already, expired, or
+    been revoked. Ask the organiser for a new one.</p>
+  </div>
+  <p><a class="btn" href="{{ url_for('index') }}">← Back to competitions</a></p>
+{% endif %}
+{% endblock %}

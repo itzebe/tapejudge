@@ -12,6 +12,7 @@
 <div class="split">
   <div>
     <form method="post" action="{{ url_for('submit', cid=c.id) }}" novalidate>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <div class="panel">
         <div class="field">
           <label for="stable_id">Stable identifier</label>

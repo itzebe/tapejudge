@@ -9,6 +9,7 @@
 </div>
 
 <form method="post" action="{{ url_for('new_competition') }}" novalidate>
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <div class="panel">
     <div class="field">
       <label for="name">Competition name</label>
@@ -46,9 +47,10 @@
     </div>
     <fieldset>
       <legend>Judging panel</legend>
-      <p class="hint">One judge identifier per line. These are the only identities
-      permitted to score. TapeJudge records the identifier; it does not verify
-      that a judge is who they claim to be.</p>
+      <p class="hint">One judge identifier per line. These are the identifiers the
+      frozen rule binds a score to. You then invite each judge by email; only the
+      account that accepts the invitation may score under that identifier. The
+      panel is fixed when you freeze the rubric.</p>
       <label for="judges_raw">Judges</label>
       <textarea id="judges_raw" name="judges_raw" required
                 placeholder="judge.alice&#10;judge.bob&#10;judge.carol"></textarea>

@@ -26,8 +26,9 @@ import threading
 import time
 import uuid
 from contextlib import contextmanager
+from typing import ClassVar
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 class DuplicateError(RuntimeError):
@@ -50,6 +51,7 @@ CREATE TABLE IF NOT EXISTS competitions (
     name          TEXT NOT NULL,
     description   TEXT NOT NULL DEFAULT '',
     organiser     TEXT NOT NULL DEFAULT '',
+    owner_account_id TEXT,                          -- NULL for pre-auth competitions
     opens_at      TEXT NOT NULL DEFAULT '',
     closes_at     TEXT NOT NULL DEFAULT '',
     status        TEXT NOT NULL DEFAULT 'draft',   -- draft|frozen|open|judging|settled
@@ -86,6 +88,7 @@ CREATE TABLE IF NOT EXISTS entries (
     evidence_json TEXT NOT NULL DEFAULT '{}',
     content_hash  TEXT NOT NULL,
     private       INTEGER NOT NULL DEFAULT 0,
+    submitter_account_id TEXT,                     -- NULL for pre-auth entries
     submitted_at  TEXT NOT NULL,
     UNIQUE (competition_id, stable_id)
 );
@@ -94,6 +97,7 @@ CREATE TABLE IF NOT EXISTS evaluations (
     competition_id TEXT NOT NULL REFERENCES competitions(id),
     entry_id       TEXT NOT NULL REFERENCES entries(id),
     judge          TEXT NOT NULL,
+    judge_account_id TEXT,                         -- NULL => identity not authenticated
     scores_json    TEXT NOT NULL,
     justification  TEXT NOT NULL DEFAULT '',
     commitment     TEXT NOT NULL,
@@ -101,6 +105,42 @@ CREATE TABLE IF NOT EXISTS evaluations (
     created_at     TEXT NOT NULL,
     UNIQUE (competition_id, entry_id, judge)
 );
+CREATE TABLE IF NOT EXISTS accounts (
+    id            TEXT PRIMARY KEY,
+    email         TEXT NOT NULL,
+    display_name  TEXT NOT NULL DEFAULT '',
+    password_hash TEXT NOT NULL,
+    session_epoch INTEGER NOT NULL DEFAULT 0,
+    created_at    TEXT NOT NULL,
+    UNIQUE (email)
+);
+CREATE TABLE IF NOT EXISTS memberships (
+    id             TEXT PRIMARY KEY,
+    account_id     TEXT NOT NULL REFERENCES accounts(id),
+    competition_id TEXT NOT NULL REFERENCES competitions(id),
+    role           TEXT NOT NULL,                  -- organiser|judge|entrant
+    label          TEXT NOT NULL DEFAULT '',       -- the judge identifier on this competition
+    created_at     TEXT NOT NULL,
+    UNIQUE (competition_id, account_id, role)
+);
+-- A judge label is unique per competition; organiser/entrant rows leave it ''.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_membership_judge_label
+    ON memberships(competition_id, label) WHERE role='judge';
+CREATE TABLE IF NOT EXISTS invitations (
+    id             TEXT PRIMARY KEY,
+    competition_id TEXT NOT NULL REFERENCES competitions(id),
+    email          TEXT NOT NULL,
+    role           TEXT NOT NULL,
+    label          TEXT NOT NULL,
+    token_hash     TEXT NOT NULL,
+    invited_by     TEXT,
+    created_at     TEXT NOT NULL,
+    expires_at     TEXT NOT NULL,
+    accepted_at    TEXT,
+    accepted_by    TEXT,
+    revoked_at     TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_invite_token ON invitations(token_hash);
 CREATE TABLE IF NOT EXISTS conflicts (
     id             TEXT PRIMARY KEY,
     competition_id TEXT NOT NULL REFERENCES competitions(id),
@@ -182,20 +222,46 @@ class Store:
     def _init(self) -> None:
         with self._conn() as c:
             c.executescript(_SCHEMA)
-            c.execute("INSERT OR IGNORE INTO meta(key, value) VALUES('schema_version', ?)",
+            self._migrate(c)
+            c.execute("INSERT OR REPLACE INTO meta(key, value) VALUES('schema_version', ?)",
                       (str(SCHEMA_VERSION),))
+
+    # Additive migrations for a database created by an earlier version. Each
+    # step is idempotent (it checks ``PRAGMA table_info`` first), so running it
+    # on an already-migrated database is a no-op and a partial migration can be
+    # re-run safely. No column is dropped and no row is deleted: the migration
+    # only ever *adds* nullable columns, so existing competition, entry and
+    # evaluation records are preserved byte-for-byte.
+    _ADDED_COLUMNS: ClassVar[dict[str, dict[str, str]]] = {
+        "competitions": {"owner_account_id": "TEXT"},
+        "entries": {"submitter_account_id": "TEXT"},
+        "evaluations": {"judge_account_id": "TEXT"},
+    }
+
+    def _migrate(self, c) -> None:
+        for table, columns in self._ADDED_COLUMNS.items():
+            existing = {r["name"] for r in c.execute(f"PRAGMA table_info({table})")}
+            for name, decl in columns.items():
+                if name not in existing:
+                    c.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
+
+    def schema_version(self) -> int:
+        """The schema version recorded in the database (not the code constant)."""
+        with self._conn() as c:
+            row = c.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
+        return int(row["value"]) if row else 0
 
     # -- competitions ------------------------------------------------------- #
     def create_competition(self, *, name, description, organiser, opens_at, closes_at,
-                           judges, prize_note="") -> str:
+                           judges, prize_note="", owner_account_id=None) -> str:
         cid = new_id("comp")
         with self._conn() as c:
             c.execute(
                 "INSERT INTO competitions(id,name,description,organiser,opens_at,closes_at,"
-                "status,judges_json,tie_break_json,created_at,prize_note) "
-                "VALUES(?,?,?,?,?,?,'draft',?,?,?,?)",
+                "status,judges_json,tie_break_json,created_at,prize_note,owner_account_id) "
+                "VALUES(?,?,?,?,?,?,'draft',?,?,?,?,?)",
                 (cid, name, description, organiser, opens_at, closes_at,
-                 json.dumps(list(judges)), "[]", _now(), prize_note))
+                 json.dumps(list(judges)), "[]", _now(), prize_note, owner_account_id))
         self.log_event(cid, "competition_created", {"name": name, "judges": list(judges)})
         return cid
 
@@ -238,6 +304,18 @@ class Store:
             c.execute("UPDATE competitions SET status='frozen', commit_key=?, frozen_at=? "
                       "WHERE id=?", (commit_key, _now(), cid))
 
+    def set_judges(self, cid: str, judges: list[str]) -> None:
+        """Replace the declared panel. Only meaningful while the competition is a
+        draft; a frozen panel is part of the frozen rule and must not move."""
+        with self._conn() as c:
+            row = c.execute("SELECT status FROM competitions WHERE id=?", (cid,)).fetchone()
+            if row is None:
+                raise KeyError(cid)
+            if row["status"] != "draft":
+                raise PermissionError("the panel is frozen and cannot be changed")
+            c.execute("UPDATE competitions SET judges_json=? WHERE id=?",
+                      (json.dumps(list(judges)), cid))
+
     def set_status(self, cid: str, status: str) -> None:
         with self._conn() as c:
             c.execute("UPDATE competitions SET status=? WHERE id=?", (status, cid))
@@ -257,15 +335,17 @@ class Store:
 
     # -- entries ------------------------------------------------------------ #
     def add_entry(self, cid: str, *, stable_id, title, summary, link, evidence,
-                  content_hash, private=False) -> str:
+                  content_hash, private=False, submitter_account_id=None) -> str:
         eid = new_id("entry")
         with self._conn() as c:
             try:
                 c.execute(
                     "INSERT INTO entries(id,competition_id,stable_id,title,summary,link,"
-                    "evidence_json,content_hash,private,submitted_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                    "evidence_json,content_hash,private,submitted_at,submitter_account_id) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                     (eid, cid, stable_id, title, summary, link,
-                     json.dumps(evidence or {}), content_hash, 1 if private else 0, _now()))
+                     json.dumps(evidence or {}), content_hash, 1 if private else 0, _now(),
+                     submitter_account_id))
             except sqlite3.IntegrityError as e:
                 raise DuplicateError(
                     f"entry {stable_id!r} already exists in this competition") from e
@@ -286,15 +366,16 @@ class Store:
 
     # -- evaluations -------------------------------------------------------- #
     def add_evaluation(self, cid: str, *, entry_id, judge, scores, justification,
-                       commitment, nonce) -> str:
+                       commitment, nonce, judge_account_id=None) -> str:
         eid = new_id("eval")
         with self._conn() as c:
             try:
                 c.execute(
                     "INSERT INTO evaluations(id,competition_id,entry_id,judge,scores_json,"
-                    "justification,commitment,nonce,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                    "justification,commitment,nonce,created_at,judge_account_id) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?)",
                     (eid, cid, entry_id, judge, json.dumps(scores, sort_keys=True),
-                     justification, commitment, nonce, _now()))
+                     justification, commitment, nonce, _now(), judge_account_id))
             except sqlite3.IntegrityError as e:
                 raise DuplicateError(
                     f"{judge!r} has already scored entry {entry_id!r}") from e
@@ -329,6 +410,129 @@ class Store:
         with self._conn() as c:
             rows = c.execute("SELECT * FROM conflicts WHERE competition_id=?", (cid,)).fetchall()
         return [dict(r) for r in rows]
+
+    # -- accounts ----------------------------------------------------------- #
+    def create_account(self, *, email, display_name, password_hash) -> str:
+        aid = new_id("acct")
+        with self._conn() as c:
+            try:
+                c.execute(
+                    "INSERT INTO accounts(id,email,display_name,password_hash,"
+                    "session_epoch,created_at) VALUES(?,?,?,?,0,?)",
+                    (aid, email, display_name, password_hash, _now()))
+            except sqlite3.IntegrityError as e:
+                raise DuplicateError("an account with that email already exists") from e
+        return aid
+
+    def get_account(self, aid: str) -> dict | None:
+        with self._conn() as c:
+            row = c.execute("SELECT * FROM accounts WHERE id=?", (aid,)).fetchone()
+        return dict(row) if row else None
+
+    def get_account_by_email(self, email: str) -> dict | None:
+        with self._conn() as c:
+            row = c.execute("SELECT * FROM accounts WHERE email=?", (email,)).fetchone()
+        return dict(row) if row else None
+
+    def set_password_hash(self, aid: str, password_hash: str) -> None:
+        with self._conn() as c:
+            c.execute("UPDATE accounts SET password_hash=? WHERE id=?", (password_hash, aid))
+
+    def bump_session_epoch(self, aid: str) -> None:
+        """Invalidate every existing session for an account (logout everywhere,
+        or after a password change)."""
+        with self._conn() as c:
+            c.execute("UPDATE accounts SET session_epoch=session_epoch+1 WHERE id=?", (aid,))
+
+    # -- memberships -------------------------------------------------------- #
+    def add_membership(self, *, account_id, competition_id, role, label) -> str:
+        mid = new_id("mem")
+        with self._conn() as c:
+            try:
+                c.execute(
+                    "INSERT INTO memberships(id,account_id,competition_id,role,label,created_at) "
+                    "VALUES(?,?,?,?,?,?)",
+                    (mid, account_id, competition_id, role, label, _now()))
+            except sqlite3.IntegrityError as e:
+                raise DuplicateError(
+                    "that account already has this role here, or the label is taken") from e
+        return mid
+
+    def list_memberships(self, competition_id: str) -> list[dict]:
+        with self._conn() as c:
+            rows = c.execute(
+                "SELECT * FROM memberships WHERE competition_id=? ORDER BY created_at",
+                (competition_id,)).fetchall()
+        return [dict(r) for r in rows]
+
+    def memberships_for_account(self, account_id: str) -> list[dict]:
+        with self._conn() as c:
+            rows = c.execute(
+                "SELECT * FROM memberships WHERE account_id=? ORDER BY created_at",
+                (account_id,)).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_membership(self, competition_id: str, account_id: str, role: str) -> dict | None:
+        with self._conn() as c:
+            row = c.execute(
+                "SELECT * FROM memberships WHERE competition_id=? AND account_id=? AND role=?",
+                (competition_id, account_id, role)).fetchone()
+        return dict(row) if row else None
+
+    def find_membership_by_label(self, competition_id: str, label: str) -> dict | None:
+        with self._conn() as c:
+            row = c.execute(
+                "SELECT * FROM memberships WHERE competition_id=? AND label=?",
+                (competition_id, label)).fetchone()
+        return dict(row) if row else None
+
+    def remove_membership(self, membership_id: str) -> None:
+        with self._conn() as c:
+            c.execute("DELETE FROM memberships WHERE id=?", (membership_id,))
+
+    # -- invitations -------------------------------------------------------- #
+    def create_invitation(self, *, competition_id, email, role, label, token_hash,
+                          expires_at, invited_by=None) -> str:
+        iid = new_id("inv")
+        with self._conn() as c:
+            c.execute(
+                "INSERT INTO invitations(id,competition_id,email,role,label,token_hash,"
+                "invited_by,created_at,expires_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                (iid, competition_id, email, role, label, token_hash, invited_by,
+                 _now(), expires_at))
+        self.log_event(competition_id, "judge_invited",
+                       {"email": email, "role": role, "label": label})
+        return iid
+
+    def get_invitation_by_token_hash(self, token_hash: str) -> dict | None:
+        with self._conn() as c:
+            row = c.execute("SELECT * FROM invitations WHERE token_hash=?",
+                            (token_hash,)).fetchone()
+        return dict(row) if row else None
+
+    def list_invitations(self, competition_id: str) -> list[dict]:
+        with self._conn() as c:
+            rows = c.execute("SELECT * FROM invitations WHERE competition_id=? "
+                             "ORDER BY created_at", (competition_id,)).fetchall()
+        return [dict(r) for r in rows]
+
+    def accept_invitation(self, invitation_id: str, account_id: str) -> bool:
+        """Mark an invitation accepted exactly once.
+
+        The ``accepted_at IS NULL`` guard makes this atomic: two concurrent
+        accepts race on the UPDATE and exactly one sees a changed row.
+        """
+        with self._conn() as c:
+            cur = c.execute(
+                "UPDATE invitations SET accepted_at=?, accepted_by=? "
+                "WHERE id=? AND accepted_at IS NULL",
+                (_now(), account_id, invitation_id))
+            return cur.rowcount == 1
+
+    def revoke_invitation(self, invitation_id: str) -> None:
+        with self._conn() as c:
+            c.execute("UPDATE invitations SET revoked_at=? WHERE id=?",
+                      (_now(), invitation_id))
 
     # -- audit -------------------------------------------------------------- #
     def log_event(self, cid: str, kind: str, payload: dict | None = None) -> None:

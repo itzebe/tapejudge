@@ -51,7 +51,29 @@ horizontal scroll at 390px (up to 97px) from grid/flex `min-width:auto`.
 
 ## Release gate (recorded decision)
 
-Ready to prepare for a **restricted** public release; **not** ready for an
-unrestricted one until **authentication + object-level authorisation** gate the
-write routes. The blocker is exposure, not integrity — the integrity promise
-held under adversarial testing.
+**Mission 6 (2026-11-07) closed the blocker.** Authentication + object-level
+authorisation now gate every write route; public verification stays anonymous.
+Verdict: **ready for a public release of the full surface**, conditional on the
+deployment plan (TLS, `TAPEJUDGE_SECRET`, shared store/limiter only if >1
+instance). Residual is fairness, not exposure: the app proves *which account*
+acted, not whether the judge was fair.
+
+## Mission 6 (2026-11-07) — auth + authorisation
+
+- `tapejudge/auth.py` = mechanism (scrypt, session rotation, `session_epoch`,
+  CSRF, `LoginThrottle`); `service.py` = policy (`require_organiser`, judge
+  membership binding, viewer-scoped entries); `web/app.py` = enforcement (central
+  CSRF `before_request`, central `AuthError` handler). Identity comes **only**
+  from the session; a body-supplied role/label/owner is never read.
+- **Uniform refusal invariant:** `AuthError` must reach the central handler, so
+  the ownership gate is called **outside** every route's `try`. Calling it inside
+  swallowed it into a flash → a 200 for a foreign competition vs 404 for unknown =
+  an existence oracle (V-16). Fixed on `rubric`/`publish`/`results` (`judges` was
+  already correct). Keep new organiser routes matching `judges`.
+- Suite **135 → 196** (`tests/test_auth.py` 59 tests + `tests/authtestkit.py`).
+  `python3 -m unittest discover -s tests` → 196 OK; ruff clean; pip-audit clean.
+- Docs: new `docs/MISSION6_SECURITY_REVIEW.md`; THREAT_MODEL/VULN_REGISTER (V-16,
+  A-01 closed)/RELEASE_READINESS/REGRESSION_EVIDENCE/DEPLOYMENT_PLAN/README
+  updated. ARCHITECTURE.md gained an "Authentication and authorisation" section.
+- Auth-suite gotcha: helpers must fetch CSRF from a **200** page (a `/` or the
+  target page); fetching a token from a 404 raises before the request is sent.

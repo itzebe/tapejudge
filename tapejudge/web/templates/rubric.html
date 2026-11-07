@@ -15,12 +15,19 @@
     <span class="hash">{{ c.rubric_digest[:24] }}…</span></p>
   <p><a class="btn" href="{{ url_for('publish', cid=c.id) }}">Go to publication →</a></p>
 </div>
+{% elif not is_organiser %}
+<div class="notice warn">
+  <h3>Read-only</h3>
+  <p>Only the organiser who created this competition can configure its rubric.
+  You can read the rule and, once it is frozen, verify the result.</p>
+</div>
 {% endif %}
 
 <div class="split">
   <div>
-    {% if c.status == 'draft' %}
+    {% if c.status == 'draft' and is_organiser %}
     <form method="post" action="{{ url_for('rubric', cid=c.id) }}" id="rubric-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <fieldset>
         <legend>Criteria</legend>
         <p class="hint">Weight ≥ 1. Maximum ≥ 1. Machine-checkable or
@@ -104,12 +111,13 @@
       {% endif %}
     </div>
 
-    {% if c.status == 'draft' and c.rubric_json %}
+    {% if c.status == 'draft' and c.rubric_json and is_organiser %}
     <div class="panel">
       <h3>Freeze the rule</h3>
       <p>Freezing compiles the rule into the circuit above and fixes it. After
       this point it cannot be replaced.</p>
       <form method="post" action="{{ url_for('publish', cid=c.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <button class="btn primary" type="submit" name="action" value="freeze">Freeze &amp; publish →</button>
       </form>
     </div>

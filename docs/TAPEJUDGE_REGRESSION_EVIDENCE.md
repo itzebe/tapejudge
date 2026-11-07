@@ -8,6 +8,12 @@ capture, not a claim.
 
 ## 1. Test suites
 
+> **Mission 6 update (2026-11-07).** The suite is now **196 tests** (7 skipped
+> offline). The 61 added tests are `tests/test_auth.py` (59 adversarial
+> authentication / authorisation tests) plus the `authtestkit.py` helpers and
+> two updated expectations. The counts below are the Mission 5 capture; the
+> Mission 6 capture is in §1c.
+
 ### Offline (no network)
 
 ```bash
@@ -15,7 +21,7 @@ TAPEJUDGE_SKIP_CHAIN=1 python3 -m unittest discover -s tests
 ```
 
 ```
-Ran 135 tests in 2.275s
+Ran 196 tests in 33.826s
 
 OK (skipped=7)
 ```
@@ -29,14 +35,14 @@ python3 -m unittest discover -s tests
 ```
 
 ```
-Ran 135 tests in 37.726s
+Ran 196 tests in 69.091s
 
 OK
 ```
 
-**Baseline comparison:** the suite had **109 tests (7 skipped)** before this
-mission. It now has **135** — the 26 added tests are
-`tests/test_hardening.py` (25 defect-regression tests + 1 stylesheet regression).
+**Baseline comparison:** the suite had **109 tests (7 skipped)** before Mission
+5. Mission 5 added 26 (`tests/test_hardening.py`); Mission 6 added 61
+(`tests/test_auth.py` + the auth test kit). It now has **196**.
 
 ### 1b. The skipped tests are real, and they pass against the chain
 
@@ -53,6 +59,18 @@ OK
 These perform read-only `eth_call` against the live X Layer contracts (chain 196)
 and assert the local TAP-02 evaluator agrees with the chain. No transaction is
 sent.
+
+### 1c. Mission 6 — authentication and authorisation
+
+```bash
+python3 -m unittest tests.test_auth
+```
+
+```
+Ran 59 tests in 10.417s
+
+OK
+```
 
 ---
 
@@ -264,4 +282,5 @@ or key was used.
 - **No real wallet publication.** `prepare_tapeout` builds the unsigned call and
   stops; the actual `tapeout` transaction was not sent (it needs a funded signer).
 - **No browser matrix beyond Chromium.** Firefox/Safari were not exercised.
-- **No authenticated flow** — there is no authentication to test (residual A-01).
+- **Authenticated flows** are now covered: see §1c and
+  `MISSION6_SECURITY_REVIEW.md` (Mission 6 closed the former residual A-01).

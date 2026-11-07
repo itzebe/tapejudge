@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Your account · TapeJudge{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Your account</h1>
+  <p class="sub">{{ account.email }}{% if account.display_name %} · {{ account.display_name }}{% endif %}</p>
+</div>
+
+<div class="panel">
+  <h3>Your roles</h3>
+  {% if memberships %}
+  <table>
+    <thead><tr><th scope="col">Competition</th><th scope="col">Role</th>
+      <th scope="col">Judge identifier</th><th scope="col"></th></tr></thead>
+    <tbody>
+      {% for m in memberships %}
+      <tr>
+        <td><a href="{{ url_for('results', cid=m.competition.id) }}">{{ m.competition.name }}</a></td>
+        <td><span class="pill">{{ m.role }}</span></td>
+        <td class="mono">{{ m.label or '—' }}</td>
+        <td class="right">
+          {% if m.role == 'organiser' %}
+            <a class="btn sm" href="{{ url_for('judges', cid=m.competition.id) }}">Manage judges</a>
+          {% elif m.role == 'judge' %}
+            <a class="btn sm" href="{{ url_for('judge', cid=m.competition.id) }}">Judge</a>
+          {% else %}
+            <a class="btn sm" href="{{ url_for('submit', cid=m.competition.id) }}">Submit</a>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">You are not yet part of any competition. Create one, or accept
+  a judge invitation from an organiser.</p>
+  {% endif %}
+</div>
+
+<div class="panel">
+  <h3>Session</h3>
+  <form method="post" action="{{ url_for('logout') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="btn" type="submit">Sign out</button>
+  </form>
+</div>
+{% endblock %}

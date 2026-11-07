@@ -1,8 +1,9 @@
 # TapeJudge — Production Deployment Plan
 
 Research date **2026-11-07**. Companion to `TAPEJUDGE_RELEASE_READINESS.md`.
-This plan assumes the release verdict: **restricted release now, unrestricted
-release only after authentication.**
+This plan assumes the release verdict: **a public release of the full surface is
+now permitted** — authentication and object-level authorisation are implemented
+(Mission 6) — conditional on the controls below.
 
 It describes a single-instance deployment that matches the application's actual
 architecture (Flask + SQLite + read-only X Layer access). It does not introduce
@@ -150,8 +151,10 @@ Until then, **one instance** is the correct deployment.
 - [ ] The SQLite file lives on a persistent volume with a backup job.
 - [ ] The rate limiter is enabled (it is, unless `TAPEJUDGE_DISABLE_RATELIMIT=1`).
 - [ ] A 5xx alert exists.
-- [ ] **Authentication is added before the write routes are public** (see the
-      release gate). For a restricted release, keep writes invite-only.
+- [x] **Authentication and object-level authorisation** are implemented
+      (Mission 6): every write requires a session + CSRF token, judges are bound
+      to a membership, organiser actions are object-scoped. For a multi-instance
+      deploy, add a shared store and a shared rate limiter (see §2).
 
 ## 9. Rollback
 

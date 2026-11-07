@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}{{ c.name }} · Judges · TapeJudge{% endblock %}
+{% block content %}
+<div class="crumb"><a href="{{ url_for('index') }}">← Competitions</a> ·
+  <a href="{{ url_for('publish', cid=c.id) }}">{{ c.name }}</a></div>
+<div class="page-head">
+  <h1>Judging panel</h1>
+  <p class="sub">Invite each judge by email. An invitation is single-use, expires
+  in seven days, and can only be accepted by the account with the invited email.
+  A judge scores only under the identifier you assign here.</p>
+</div>
+
+<div class="split">
+  <div>
+    <div class="panel">
+      <h3>Invite a judge</h3>
+      <form method="post" action="{{ url_for('judges', cid=c.id) }}" novalidate>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="action" value="invite">
+        <div class="field">
+          <label for="label">Judge identifier</label>
+          <input type="text" id="label" name="label" required maxlength="60"
+                 placeholder="e.g. judge.alice" autocomplete="off">
+          <p class="hint">Must match one of the identifiers on the frozen panel.
+          It appears against every score this judge submits.</p>
+        </div>
+        <div class="field">
+          <label for="email">Judge email</label>
+          <input type="email" id="email" name="email" required autocomplete="off">
+        </div>
+        <button class="btn primary" type="submit">Create invitation</button>
+      </form>
+    </div>
+
+    {% if new_token %}
+    <div class="panel">
+      <h3>Invitation link — share it now</h3>
+      <p class="small">This link is shown once and is not stored in a recoverable
+      form. Send it to the judge over a channel you trust.</p>
+      <div class="codeblock" id="invite-url">{{ request.host_url.rstrip('/') }}{{ invite_url }}</div>
+      <div class="copy-row">
+        <button class="btn sm" data-copy="#invite-url">Copy link</button>
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="panel">
+      <h3>Current panel</h3>
+      <table>
+        <thead><tr><th scope="col">Identifier</th><th scope="col">Accepted</th>
+          <th scope="col"></th></tr></thead>
+        <tbody>
+          {% for j in c.judges %}
+          {% set accepted = invitations | selectattr('label', 'equalto', j)
+             | selectattr('status', 'equalto', 'accepted') | list %}
+          <tr>
+            <td class="mono">{{ j }}</td>
+            <td>{% if accepted %}<span class="pill settled">yes</span>
+                {% else %}<span class="muted small">not yet</span>{% endif %}</td>
+            <td class="right">
+              {% if accepted %}
+              <form method="post" action="{{ url_for('judges', cid=c.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="action" value="revoke">
+                <input type="hidden" name="label" value="{{ j }}">
+                <button class="btn sm" type="submit">Revoke</button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div>
+    <div class="panel">
+      <h3>Invitations</h3>
+      {% if invitations %}
+      <table>
+        <thead><tr><th scope="col">Identifier</th><th scope="col">Email</th>
+          <th scope="col">Status</th></tr></thead>
+        <tbody>
+          {% for inv in invitations %}
+          <tr>
+            <td class="mono">{{ inv.label }}</td>
+            <td class="small">{{ inv.email }}</td>
+            <td><span class="pill {{ inv.status }}">{{ inv.status }}</span></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="muted">No invitations yet.</p>
+      {% endif %}
+    </div>
+    <div class="notice info">
+      <h3>What an invitation proves</h3>
+      <p class="small">Accepting an invitation proves the judge controls the
+      invited email. It does not prove impartiality. Recording a conflict of
+      interest remains the judge's own act, and the audit trail keeps both facts
+      visible.</p>
+    </div>
+  </div>
+</div>
+{% endblock %}

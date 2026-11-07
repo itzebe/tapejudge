@@ -1,7 +1,10 @@
-# TapeJudge — Release Readiness Assessment (Mission 5)
+# TapeJudge — Release Readiness Assessment
 
-Research date **2026-11-07**. Baseline `f3c229a`; reviewed working tree includes
-the hardening in `TAPEJUDGE_VULNERABILITY_REGISTER.md`.
+Mission 5 (independent adversarial review) with the Mission 6 authentication and
+authorisation work applied. Research date **2026-11-07**. Baseline `f3c229a`; the
+reviewed working tree includes the hardening in
+`TAPEJUDGE_VULNERABILITY_REGISTER.md` and the identity layer in
+`MISSION6_SECURITY_REVIEW.md`.
 
 This is the release gate. It states one verdict and the reasoning behind it,
 against the product's real promise and the realities of a public deployment.
@@ -10,17 +13,17 @@ against the product's real promise and the realities of a public deployment.
 
 ## Verdict
 
-> **NOT READY for an unrestricted public production release.**
-> **READY to prepare for a restricted release** (public read/verification, and a
-> closed/organiser-operated competition), **conditional on the deployment plan
-> in `TAPEJUDGE_PRODUCTION_DEPLOYMENT_PLAN.md` and on one blocking gate: adding
-> authentication before any write route is exposed to the public.**
+> **READY for a public production release of the full surface** — public
+> verification, organiser-operated competitions, judge scoring and entry
+> submission — **conditional on the deployment plan in
+> `TAPEJUDGE_PRODUCTION_DEPLOYMENT_PLAN.md`** (TLS, `TAPEJUDGE_SECRET`, a single
+> instance or a shared store/limiter).
 
-The application is **functionally complete, internally consistent, and hardened**
-against the classes of defect this mission set out to find. It is **not** safe
-to expose its write routes to the open internet, because it has no
-authentication — and that is a design gap, not a bug this mission could fix
-without changing the product's scope.
+The Mission 5 blocking gate — **no authentication on the write routes** — is
+closed. Every write now requires an authenticated session and a CSRF token;
+judges score only under the membership bound to their account; organiser actions
+are object-scoped; and public verification remains anonymous and free, which is
+the product's promise.
 
 ---
 
@@ -36,7 +39,7 @@ Three independent axes:
 |---|---|---|
 | **Integrity** | Can an attacker change the rule, a score, or a result? | No observed path (§2) |
 | **Availability / robustness** | Can ordinary states or bad input crash a page? | No — 0 HTTP 500s across all probes (§3) |
-| **Exposure / access control** | Who can reach the write routes? | **Anyone.** This is the blocker (§4) |
+| **Exposure / access control** | Who can reach the write routes? | **Only authenticated, CSRF-bearing accounts acting within their role** (§4) |
 
 ---
 
@@ -63,26 +66,28 @@ All confirmed by tests **and** by a live HTTP probe. See
   are 413; wrong methods are 405.
 - Security headers, hardened cookies, and a non-default secret are in place.
 
-## 4. Exposure — the blocking gate
+## 4. Exposure — the gate is closed
 
-**There is no authentication.** Every route is open to anyone who can reach the
-server:
+**Every write route now requires an authenticated session and a CSRF token.** The
+Mission 5 exposure — anonymous writes — is no longer reachable:
 
 - `POST /new`, `/c/<id>/submit`, `/c/<id>/judge`, `/c/<id>/rubric`,
-  `/c/<id>/publish`, `/c/<id>/results` and the `/api/*` writes all accept
-  anonymous input.
+  `/c/<id>/publish`, `/c/<id>/results`, `/c/<id>/judges` and the `/api/*` writes
+  all refuse an anonymous caller (redirect to login, or 401/403 for the API).
+- **Judge identity is bound to an account.** A judge scores only under the label
+  of their membership; a label supplied in the request is ignored. Knowing a
+  judge's identifier is no longer enough to submit that judge's scores.
+- **Organiser actions are object-scoped.** A stranger receives the same 404 an
+  unknown competition gives — byte-for-byte identical — so the response cannot be
+  used to probe which competitions exist or who owns them.
+- **Entrants own their entries.** A private entry is visible to its submitter and
+  the organiser; everyone else sees a redacted view, including through public
+  verification.
+- **CSRF is enforced centrally**, so a new write route cannot be added without it.
 
-For a competition *this is the whole point of the surface* — entrants and judges
-must be able to act. But for an **unrestricted public deployment** it means:
-
-1. Anyone can create a competition and consume resources.
-2. Anyone can submit entries to any open competition.
-3. **Anyone who knows a judge's identifier can submit that judge's scores** —
-   judge identity is a recorded string, not a verified login.
-4. The rate limiter blunts volume but does not gate identity.
-
-The mission deliberately did not add an identity system; that is a product
-decision with real scope, not a defect to patch silently. **This is the gate.**
+Residuals that remain are operational, not application defects: the rate limiter
+and the store are in-process/single-file, which is correct for one instance
+(§5).
 
 ## 5. Deployment reality
 
@@ -94,27 +99,25 @@ decision with real scope, not a defect to patch silently. **This is the gate.**
 | TLS | not terminated by the app | Required in front of it |
 | Chain access | read-only `eth_call` | No key, no spend |
 | Publication | prepared, not sent | Needs a funded signer — a separate, deliberate step |
+| Credentials | scrypt-hashed passwords | No plaintext; login throttled |
 
 ## 6. Readiness by release shape
 
 | Release shape | Verdict | Conditions |
 |---|---|---|
 | **Public read-only / verification** (anyone may view a frozen competition and reproduce it) | **Ready** | Set `TAPEJUDGE_SECRET`; TLS; single instance |
-| **Organiser-operated, invite-only competition** (writes gated by the organiser out-of-band) | **Ready with care** | The organiser must treat judge identifiers as shared secrets and watch the access log; rate limiting on |
-| **Unrestricted public competition** (open sign-up, self-service writes) | **NOT ready** | Requires authentication + authorisation on every write route |
+| **Organiser-operated competition with invited judges** (organiser creates, judges accept a single-use invitation and score under their account) | **Ready** | TLS; `TAPEJUDGE_SECRET`; single instance (or shared store + limiter) |
+| **Unrestricted public competition** (open sign-up, self-service writes) | **Ready** | The above; a shared rate limiter and store if more than one instance runs |
 
 ## 7. Blocking items before an unrestricted public release
 
-1. **Authentication** for organisers, entrants and judges (the top gate).
-2. **Authorisation**: a judge may only score the competition they are on; an
-   organiser may only manage their own competition (object-level checks).
+1. ~~**Authentication** for organisers, entrants and judges.~~ **DONE (Mission 6).**
+2. ~~**Authorisation**: object-level checks on every write.~~ **DONE (Mission 6).**
 3. **A shared rate limiter** if more than one instance runs.
 4. **A shared store** (Postgres) if more than one instance runs.
-5. **Operational**: log retention, backups of the SQLite file, and an alert on
-   5xx.
+5. **Operational**: log retention, backups of the SQLite file, and an alert on 5xx.
 
-None of these is a correctness defect; they are the difference between "a
-working MVP" and "a public service". They are scoped in the deployment plan.
+Items 3–5 are deployment-shape decisions, not correctness defects.
 
 ## 8. Non-blocking, recommended
 
@@ -123,18 +126,22 @@ working MVP" and "a public service". They are scoped in the deployment plan.
 - Structured request logging (the app currently uses Flask's default logger).
 - A `Content-Security-Policy-Report-Only` pass before enforcing the strict CSP.
 
-## 9. What this mission changed to reach this verdict
+## 9. What changed to reach this verdict
 
-See `TAPEJUDGE_VULNERABILITY_REGISTER.md`: 15 confirmed defects fixed (500s on
-ordinary states, score coercion, panel mismatch, a submission race, missing
-security headers/cookies/secret handling, no rate limiting, and a real mobile
-overflow), each with a regression test. 135 tests pass; lint and dependency
-audit are clean.
+- **Mission 5** (`TAPEJUDGE_VULNERABILITY_REGISTER.md`): 15 confirmed defects
+  fixed (500s on ordinary states, score coercion, panel mismatch, a submission
+  race, missing security headers/cookies/secret handling, no rate limiting, and a
+  real mobile overflow), each with a regression test.
+- **Mission 6** (`MISSION6_SECURITY_REVIEW.md`): authentication, judge
+  memberships, object-level authorisation, CSRF, session rotation/epoch and
+  viewer-scoped entry visibility; plus V-16 (the organiser-route existence
+  oracle). 196 tests pass; lint and dependency audit are clean.
 
 ## 10. Bottom line
 
 The MVP is a **solid, honest, reproducible product** whose central integrity
-promise holds under adversarial testing. It is **safe to prepare for a
-restricted public release now**, and **safe for an unrestricted public release
-only after authentication and object-level authorisation are added** — the
-single decision this gate turns on.
+promise holds under adversarial testing, and whose write surface is now gated by
+authentication and object-level authorisation. It is **safe to release publicly**
+once the deployment plan (TLS, `TAPEJUDGE_SECRET`, and a shared store/limiter if
+more than one instance runs) is in place. The remaining risks are operational and
+product-boundary, not exploitable application defects.

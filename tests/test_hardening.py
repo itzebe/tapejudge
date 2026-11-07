@@ -24,6 +24,7 @@ from tapejudge.service import ConflictError, TapeJudgeService
 from tapejudge.store import DuplicateError, Store
 from tapejudge.web.app import create_app
 from tapejudge.web.ratelimit import RateLimiter
+from tests.authtestkit import login, post
 
 
 class _StubChain:
@@ -38,25 +39,53 @@ class _StubChain:
 
 CRITERIA = [{"name": "demo", "weight": 1, "max_score": 10}]
 JUDGES = ["j1"]
+ORG = "org@test.dev"
+JUDGE = "j1@test.dev"
 
 
 def make_client(*, testing=True, db_path=":memory:"):
     app = create_app(db_path=db_path, chain_client=_StubChain(), testing=testing)
-    return app, app.test_client()
+    client = app.test_client()
+    if testing:
+        # Every HTTP test needs an authenticated actor; log the organiser in.
+        login(client, app, ORG, name="Organiser")
+    return app, client
 
 
-def build(c, *, freeze=True, evaluate=True):
-    cid = c.post("/api/competitions",
-                 json={"name": "Hardening", "judges": JUDGES}).get_json()["id"]
-    c.post(f"/api/competitions/{cid}/rubric",
-           json={"criteria": CRITERIA, "judges": 1})
+def _join_judge(app, c, cid, label="j1", email=JUDGE):
+    """Invite a judge and accept the invitation, then leave the judge signed in.
+
+    Idempotent: if the judge has already accepted, just sign them back in.
+    """
+    from tests.authtestkit import ensure_account
+    ensure_account(app, email, name=f"Judge {label}")
+    svc = app.config["SERVICE"]
+    acct = svc.store.get_account_by_email(email)
+    if svc.judge_label(cid, acct["id"]) is None:
+        login(c, app, ORG, name="Organiser")
+        org = svc.store.get_account_by_email(ORG)
+        tok = svc.invite_judge(cid, email=email, label=label,
+                               organiser_account_id=org["id"])
+        login(c, app, email, name=f"Judge {label}")
+        post(c, f"/invitations/{tok['token']}")
+    else:
+        login(c, app, email, name=f"Judge {label}")
+
+
+def build(c, *, freeze=True, evaluate=True, app=None):
+    cid = post(c, "/api/competitions",
+               json={"name": "Hardening", "judges": JUDGES}).get_json()["id"]
+    post(c, f"/api/competitions/{cid}/rubric",
+         json={"criteria": CRITERIA, "judges": 1})
     if freeze:
-        c.post(f"/api/competitions/{cid}/freeze")
-    c.post(f"/api/competitions/{cid}/entries",
-           json={"stable_id": "a", "title": "A"})
+        post(c, f"/api/competitions/{cid}/freeze")
+    post(c, f"/api/competitions/{cid}/entries",
+         json={"stable_id": "a", "title": "A"})
     if freeze and evaluate:
-        c.post(f"/api/competitions/{cid}/evaluations",
-               json={"entry": "a", "judge": "j1", "scores": {"demo": 5}})
+        _join_judge(app, c, cid)
+        post(c, f"/api/competitions/{cid}/evaluations",
+             json={"entry": "a", "scores": {"demo": 5}})
+    login(c, app, ORG, name="Organiser")
     return cid
 
 
@@ -73,16 +102,16 @@ class TestNoRubricNavigation(unittest.TestCase):
         self.app, self.client = make_client()
 
     def test_pages_render_pending_not_500(self):
-        cid = self.client.post("/api/competitions",
-                               json={"name": "Empty", "judges": ["j1"]}).get_json()["id"]
+        cid = post(self.client, "/api/competitions",
+                   json={"name": "Empty", "judges": ["j1"]}).get_json()["id"]
         for path in (f"/c/{cid}/results", f"/c/{cid}/verify"):
             r = self.client.get(path)
             self.assertEqual(r.status_code, 200, path)
             self.assertIn("No rule yet", r.get_data(as_text=True))
 
     def test_api_reports_missing_rule_as_4xx(self):
-        cid = self.client.post("/api/competitions",
-                               json={"name": "Empty", "judges": ["j1"]}).get_json()["id"]
+        cid = post(self.client, "/api/competitions",
+                   json={"name": "Empty", "judges": ["j1"]}).get_json()["id"]
         for path in (f"/api/competitions/{cid}/results",
                      f"/api/competitions/{cid}/verify"):
             r = self.client.get(path)
@@ -95,7 +124,7 @@ class TestMalformedStoredRows(unittest.TestCase):
 
     def setUp(self):
         self.app, self.client = make_client()
-        self.cid = build(self.client)
+        self.cid = build(self.client, app=self.app)
 
     def test_non_json_score_does_not_crash(self):
         _tamper_scores(self.app, self.cid, "not json")
@@ -113,7 +142,7 @@ class TestMalformedStoredRows(unittest.TestCase):
 
     def test_settle_refuses_malformed(self):
         _tamper_scores(self.app, self.cid, "not json")
-        r = self.client.post(f"/c/{self.cid}/results", follow_redirects=False)
+        r = post(self.client, f"/c/{self.cid}/results")
         # The POST is a redirect back to the results page (with a flash), not a 500.
         self.assertEqual(r.status_code, 302)
         self.assertNotEqual(self.app.config["SERVICE"].get_competition(self.cid)["status"],
@@ -125,11 +154,14 @@ class TestScoreValidation(unittest.TestCase):
 
     def setUp(self):
         self.app, self.client = make_client()
-        self.cid = build(self.client, freeze=True, evaluate=False)
+        self.cid = build(self.client, app=self.app, freeze=True, evaluate=False)
 
     def _score(self, value):
-        return self.client.post(f"/api/competitions/{self.cid}/evaluations",
-                                json={"entry": "a", "judge": "j1", "scores": {"demo": value}})
+        _join_judge(self.app, self.client, self.cid)
+        r = post(self.client, f"/api/competitions/{self.cid}/evaluations",
+                 json={"entry": "a", "scores": {"demo": value}})
+        login(self.client, self.app, ORG, name="Organiser")
+        return r
 
     def test_float_rejected(self):
         for v in (5.9, 5.0, 0.5, 10.999):
@@ -152,30 +184,28 @@ class TestPanelConsistency(unittest.TestCase):
         self.app, self.client = make_client()
 
     def test_rubric_size_must_match_panel(self):
-        cid = self.client.post(
-            "/api/competitions",
-            json={"name": "Panel", "judges": ["j1", "j2", "j3"]}).get_json()["id"]
-        r = self.client.post(f"/api/competitions/{cid}/rubric",
-                             json={"criteria": CRITERIA, "judges": 1})
+        cid = post(self.client, "/api/competitions",
+                   json={"name": "Panel", "judges": ["j1", "j2", "j3"]}).get_json()["id"]
+        r = post(self.client, f"/api/competitions/{cid}/rubric",
+             json={"criteria": CRITERIA, "judges": 1})
         self.assertEqual(r.status_code, 400)
         self.assertIn("panel has 3 judge", r.get_json()["error"])
 
     def test_matching_size_is_accepted(self):
-        cid = self.client.post(
-            "/api/competitions",
-            json={"name": "Panel", "judges": ["j1", "j2", "j3"]}).get_json()["id"]
-        r = self.client.post(f"/api/competitions/{cid}/rubric",
-                             json={"criteria": CRITERIA, "judges": 3})
+        cid = post(self.client, "/api/competitions",
+                   json={"name": "Panel", "judges": ["j1", "j2", "j3"]}).get_json()["id"]
+        r = post(self.client, f"/api/competitions/{cid}/rubric",
+             json={"criteria": CRITERIA, "judges": 3})
         self.assertEqual(r.status_code, 200)
 
     def test_duplicate_judges_rejected(self):
-        r = self.client.post("/api/competitions",
-                             json={"name": "Panel", "judges": ["j1", "j1"]})
+        r = post(self.client, "/api/competitions",
+                 json={"name": "Panel", "judges": ["j1", "j1"]})
         self.assertEqual(r.status_code, 400)
 
     def test_too_many_judges_rejected(self):
-        r = self.client.post("/api/competitions",
-                             json={"name": "Panel", "judges": [f"j{i}" for i in range(50)]})
+        r = post(self.client, "/api/competitions",
+                 json={"name": "Panel", "judges": [f"j{i}" for i in range(50)]})
         self.assertEqual(r.status_code, 400)
 
 
@@ -184,11 +214,11 @@ class TestIllFormedRubric(unittest.TestCase):
         self.app, self.client = make_client()
 
     def test_oversized_rubric_is_a_4xx_not_500(self):
-        cid = self.client.post("/api/competitions",
-                               json={"name": "Big", "judges": ["j1"]}).get_json()["id"]
+        cid = post(self.client, "/api/competitions",
+                   json={"name": "Big", "judges": ["j1"]}).get_json()["id"]
         crit = [{"name": f"c{i}", "weight": 1, "max_score": 10} for i in range(900)]
-        r = self.client.post(f"/api/competitions/{cid}/rubric",
-                             json={"criteria": crit, "judges": 1})
+        r = post(self.client, f"/api/competitions/{cid}/rubric",
+             json={"criteria": crit, "judges": 1})
         self.assertEqual(r.status_code, 400)
         self.assertNotEqual(r.status_code, 500)
 
@@ -325,12 +355,13 @@ class TestRateLimiter(unittest.TestCase):
     def test_write_endpoint_returns_429_when_limited(self):
         app = create_app(db_path=":memory:", chain_client=_StubChain(), testing=False)
         c = app.test_client()
-        r1 = c.post("/api/competitions", json={"name": "One", "judges": ["j1"]})
+        login(c, app, ORG, name="Organiser")
+        r1 = post(c, "/api/competitions", json={"name": "One", "judges": ["j1"]})
         self.assertEqual(r1.status_code, 201)
         # The app's own limiter allows 30 competition writes a minute; hammering
         # past that must answer 429, not 500.
-        codes = [c.post("/api/competitions",
-                        json={"name": f"N{i}", "judges": ["j1"]}).status_code
+        codes = [post(c, "/api/competitions",
+                      json={"name": f"N{i}", "judges": ["j1"]}).status_code
                  for i in range(40)]
         self.assertIn(429, codes)
 

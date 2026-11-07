@@ -38,12 +38,17 @@ from flask import (
     redirect,
     render_template,
     request,
+    session,
     url_for,
 )
 
+from .. import auth
+from ..auth import LoginThrottle
 from ..netlist import IllFormed
 from ..service import (
+    AuthError,
     ConflictError,
+    InvitationError,
     TapeJudgeService,
     ValidationError,
     _as_int,
@@ -68,6 +73,7 @@ def create_app(*, db_path: str | None = None, chain_client=None,
     app.config["STORE"] = store
     app.config["SERVICE"] = TapeJudgeService(store, chain_client=chain_client)
     app.config["CHAIN"] = chain_client or XLayerClient()
+    app.config["LOGIN_THROTTLE"] = LoginThrottle()
     _register_routes(app)
     _register_security_headers(app)
     _register_error_handlers(app)
@@ -170,6 +176,29 @@ def _register_routes(app: Flask) -> None:
     @app.before_request
     def _bind():
         g.app_service = app.config["SERVICE"]
+        # Resolve the session to a live account once per request. Every
+        # authorisation decision reads ``g.account``; nothing reads an identity
+        # from the request body.
+        g.account = auth.current_account(session, app.config["STORE"])
+        # A token is minted lazily so a GET also has one to embed in a form.
+        g.csrf_token = auth.session_csrf_token(session)
+
+    # CSRF: every state-changing request must carry the session's token. This is
+    # enforced centrally, so a new write route cannot be added without it.
+    _SAFE_METHODS = {"GET", "HEAD", "OPTIONS", "TRACE"}
+
+    @app.before_request
+    def _csrf_guard():
+        if request.method in _SAFE_METHODS:
+            return None
+        supplied = request.form.get("csrf_token") or request.headers.get("X-CSRF-Token")
+        if not auth.csrf_ok(session, supplied):
+            if request.path.startswith("/api/"):
+                return jsonify({"error": "missing or invalid CSRF token"}), 403
+            return render_template("error.html", code=403,
+                                   message="Your session token was missing or stale. "
+                                           "Reload the page and try again."), 403
+        return None
 
     # -- helpers ------------------------------------------------------------ #
     def _comp_or_404(cid):
@@ -177,6 +206,24 @@ def _register_routes(app: Flask) -> None:
             return _svc().get_competition(cid)
         except KeyError:
             abort(404)
+
+    def _account_id():
+        return g.account["id"] if g.account else None
+
+    def _require_login(next_url=None):
+        if g.account is not None:
+            return None
+        if request.path.startswith("/api/"):
+            abort(401)
+        flash("Sign in to continue.", "error")
+        return redirect(url_for("login", next=next_url or request.path))
+
+    def _require_organiser(cid):
+        """The one browser gate for an organiser action. Raises ``AuthError``,
+        which the central handler turns into a 404 for HTML and a 403 for JSON —
+        the same response an unknown competition gives, so it cannot be used to
+        probe ownership."""
+        _svc().require_organiser(cid, _account_id())
 
     def _form_dict(prefix="crit"):
         """Collect criteria rows from a form: crit_name[], crit_weight[], crit_max[]."""
@@ -197,10 +244,99 @@ def _register_routes(app: Flask) -> None:
         return render_template("index.html", competitions=comps,
                                chain_reachable=app.config["CHAIN"].is_reachable())
 
+    # --------------------------------------------------------------- auth -- #
+    @app.route("/login", methods=["GET", "POST"])
+    def login():
+        if g.account is not None:
+            return redirect(url_for("index"))
+        if request.method == "POST":
+            email = request.form.get("email", "")
+            password = request.form.get("password", "")
+            ip = request.remote_addr or "unknown"
+            throttle = app.config["LOGIN_THROTTLE"]
+            if not throttle.allow(ip, email):
+                flash("Too many sign-in attempts. Wait a few minutes and try again.", "error")
+                return render_template("login.html", email=email), 429
+            acct = _svc().authenticate(email=email, password=password)
+            if acct is None:
+                # The same message whether the account exists or the password is
+                # wrong: never disclose which.
+                flash("Email or password is incorrect.", "error")
+                return render_template("login.html", email=email), 401
+            throttle.reset(ip, email)
+            # Clear any pre-login state, then rotate the session id and token.
+            session.clear()
+            auth.rotate_session(session, acct)
+            nxt = request.args.get("next") or request.form.get("next") or ""
+            if nxt.startswith("/") and not nxt.startswith("//"):
+                return redirect(nxt)
+            return redirect(url_for("index"))
+        return render_template("login.html", email="")
+
+    @app.route("/signup", methods=["GET", "POST"])
+    def signup():
+        if g.account is not None:
+            return redirect(url_for("index"))
+        if request.method == "POST":
+            email = request.form.get("email", "")
+            password = request.form.get("password", "")
+            display_name = request.form.get("display_name", "")
+            try:
+                acct = _svc().register_account(
+                    email=email, password=password, display_name=display_name)
+            except (ValidationError, ConflictError) as e:
+                flash(str(e), "error")
+                return render_template("signup.html", email=email,
+                                       display_name=display_name), 400
+            session.clear()
+            auth.rotate_session(session, acct)
+            flash("Account created.", "ok")
+            return redirect(url_for("index"))
+        return render_template("signup.html", email="", display_name="")
+
+    @app.post("/logout")
+    def logout():
+        session.clear()
+        flash("Signed out.", "ok")
+        return redirect(url_for("index"))
+
+    @app.get("/account")
+    def account():
+        if g.account is None:
+            return redirect(url_for("login", next="/account"))
+        memberships = _svc().store.memberships_for_account(g.account["id"])
+        comps = []
+        for m in memberships:
+            comp = _svc().store.get_competition(m["competition_id"])
+            if comp:
+                comps.append({"competition": comp, "role": m["role"], "label": m["label"]})
+        return render_template("account.html", memberships=comps)
+
+    @app.route("/invitations/<token>", methods=["GET", "POST"])
+    def accept_invitation(token):
+        inv = _svc().invitation_by_token(token)
+        status = _svc().invitation_status(inv)
+        if g.account is None:
+            # Ask them to sign in (or create an account) first; the token is
+            # carried in the path so the round-trip preserves it.
+            return redirect(url_for("login", next=url_for("accept_invitation", token=token)))
+        if request.method == "POST":
+            try:
+                result = _svc().accept_invitation(token, account_id=_account_id())
+            except InvitationError as e:
+                flash(str(e), "error")
+                return render_template("invitation.html", inv=inv, status=status), 400
+            flash("Invitation accepted. You are a judge on this competition.", "ok")
+            return redirect(url_for("judge", cid=result["competition_id"]))
+        return render_template("invitation.html", inv=inv, status=status)
+
     # -------------------------------------------------------------- create #
     @app.route("/new", methods=["GET", "POST"])
     def new_competition():
         if request.method == "POST":
+            r = _require_login()
+            if r:
+                return r
             judges = [j.strip() for j in request.form.getlist("judge") if j.strip()]
             if not judges:
                 judges = [j.strip() for j in
@@ -210,11 +346,12 @@ def _register_routes(app: Flask) -> None:
                 cid = _svc().create_competition(
                     name=request.form.get("name", ""),
                     description=request.form.get("description", ""),
-                    organiser=request.form.get("organiser", ""),
+                    organiser=request.form.get("organiser", "") or g.account["display_name"],
                     opens_at=request.form.get("opens_at", ""),
                     closes_at=request.form.get("closes_at", ""),
                     judges=judges,
-                    prize_note=request.form.get("prize_note", ""))
+                    prize_note=request.form.get("prize_note", ""),
+                    owner_account_id=_account_id())
                 return redirect(url_for("rubric", cid=cid))
             except ValidationError as e:
                 flash(str(e), "error")
@@ -225,9 +362,16 @@ def _register_routes(app: Flask) -> None:
     def rubric(cid):
         comp = _comp_or_404(cid)
         if request.method == "POST":
-            criteria = _form_dict()
-            tie_break = [t for t in request.form.getlist("tie_break") if t]
+            r = _require_login()
+            if r:
+                return r
+            # The ownership gate runs *outside* the try: its AuthError must
+            # reach the central handler so a foreign competition is refused with
+            # the same 404 as an unknown one, never a 200 page with a flash.
+            _require_organiser(cid)
             try:
+                criteria = _form_dict()
+                tie_break = [t for t in request.form.getlist("tie_break") if t]
                 judges_n = _as_int(request.form.get("judges", comp.get("judges", 1) or 1))
                 _svc().set_rubric(cid, criteria, judges_n, tie_break)
                 flash("Rubric configured. Review it, then freeze.", "ok")
@@ -237,15 +381,21 @@ def _register_routes(app: Flask) -> None:
         comp = _comp_or_404(cid)
         preview = _rubric_preview(comp)
         return render_template("rubric.html", c=comp, preview=preview,
-                               max_total=_max_total(comp))
+                               max_total=_max_total(comp),
+                               is_organiser=_svc().is_organiser(cid, _account_id()))
 
     # ------------------------------------------------------------- publish #
     @app.route("/c/<cid>/publish", methods=["GET", "POST"])
     def publish(cid):
         comp = _comp_or_404(cid)
-        result = None
         if request.method == "POST":
+            r = _require_login()
+            if r:
+                return r
             action = request.form.get("action")
+            # Ownership gate outside the try (see rubric): a foreign competition
+            # must be refused with the same 404 as an unknown one.
+            _require_organiser(cid)
             try:
                 if action == "freeze":
                     _svc().freeze(cid)
@@ -258,55 +408,100 @@ def _register_routes(app: Flask) -> None:
             except (ValidationError, ConflictError) as e:
                 flash(str(e), "error")
         comp = _comp_or_404(cid)
-        return render_template("publish.html", c=comp, preview=_rubric_preview(comp))
+        return render_template("publish.html", c=comp, preview=_rubric_preview(comp),
+                               is_organiser=_svc().is_organiser(cid, _account_id()))
+
+    # --------------------------------------------------------------- panel #
+    @app.route("/c/<cid>/judges", methods=["GET", "POST"])
+    def judges(cid):
+        comp = _comp_or_404(cid)
+        r = _require_login()
+        if r:
+            return r
+        _require_organiser(cid)
+        new_token = None
+        if request.method == "POST":
+            action = request.form.get("action", "invite")
+            try:
+                if action == "revoke":
+                    _svc().revoke_judge(cid, label=request.form.get("label", ""),
+                                        organiser_account_id=_account_id())
+                    flash("Judge revoked.", "ok")
+                else:
+                    result = _svc().invite_judge(
+                        cid, email=request.form.get("email", ""),
+                        label=request.form.get("label", ""),
+                        organiser_account_id=_account_id())
+                    new_token = result["token"]
+                    flash("Invitation created. Share the link below with the judge.", "ok")
+            except (ValidationError, ConflictError, AuthError) as e:
+                flash(str(e), "error")
+        return render_template("judges.html", c=comp,
+                               invitations=_svc().list_invitations(cid, _account_id()),
+                               new_token=new_token,
+                               invite_url=(url_for("accept_invitation", token=new_token,
+                                                   _external=False) if new_token else None))
 
     # -------------------------------------------------------------- submit #
     @app.route("/c/<cid>/submit", methods=["GET", "POST"])
     def submit(cid):
         comp = _comp_or_404(cid)
         if request.method == "POST":
+            r = _require_login()
+            if r:
+                return r
             try:
                 _svc().add_entry(
                     cid, stable_id=request.form.get("stable_id", ""),
                     title=request.form.get("title", ""),
                     summary=request.form.get("summary", ""),
                     link=request.form.get("link", ""),
-                    private=request.form.get("private") == "on")
+                    private=request.form.get("private") == "on",
+                    submitter_account_id=_account_id())
                 flash("Entry submitted.", "ok")
                 return redirect(url_for("submit", cid=cid))
             except (ValidationError, ConflictError) as e:
                 flash(str(e), "error")
-        entries = _svc().list_entries(cid)
+        entries = _svc().list_entries(
+            cid, viewer_account_id=_account_id())
         return render_template("submit.html", c=comp, entries=entries)
 
     # --------------------------------------------------------------- judge #
     @app.route("/c/<cid>/judge", methods=["GET", "POST"])
     def judge(cid):
         comp = _comp_or_404(cid)
+        r = _require_login()
+        if r:
+            return r
+        # A judge may only score under the label their membership binds them to;
+        # the label is never taken from the request.
+        label = _svc().judge_label(cid, _account_id())
         if request.method == "POST":
             action = request.form.get("action", "score")
             try:
+                if label is None:
+                    raise AuthError("you are not a judge on this competition")
                 if action == "conflict":
-                    _svc().declare_conflict(cid, judge=request.form.get("judge", ""),
+                    _svc().declare_conflict(cid, judge=label,
                                             entry_stable_id=request.form.get("entry", ""),
-                                            reason=request.form.get("reason", ""))
+                                            reason=request.form.get("reason", ""),
+                                            judge_account_id=_account_id())
                     flash("Conflict of interest recorded; this judge will "
                           "not score that entry.", "ok")
                 else:
                     scores = {c["name"]: request.form.get(f"score_{c['name']}")
                               for c in (comp.get("rubric") or {}).get("criteria", [])}
                     _svc().evaluate(cid, entry_stable_id=request.form.get("entry", ""),
-                                    judge=request.form.get("judge", ""),
-                                    scores=scores,
-                                    justification=request.form.get("justification", ""))
+                                    judge=label, scores=scores,
+                                    justification=request.form.get("justification", ""),
+                                    judge_account_id=_account_id())
                     flash("Score committed. It cannot be changed.", "ok")
-                return redirect(url_for("judge", cid=cid, judge=request.form.get("judge", "")))
-            except (ValidationError, ConflictError) as e:
+                return redirect(url_for("judge", cid=cid))
+            except (ValidationError, ConflictError, AuthError) as e:
                 flash(str(e), "error")
-        judge_id = request.args.get("judge", "")
         return render_template("judge.html", c=comp,
-                               entries=_svc().list_entries(cid),
-                               judge=judge_id,
+                               entries=_svc().list_entries(cid, viewer_account_id=_account_id()),
+                               judge=label,
                                matrix=_judge_matrix(cid))
 
     # ------------------------------------------------------------- results #
@@ -314,6 +509,12 @@ def _register_routes(app: Flask) -> None:
     def results(cid):
         comp = _comp_or_404(cid)
         if request.method == "POST":
+            r = _require_login()
+            if r:
+                return r
+            # Ownership gate outside the try (see rubric): a foreign competition
+            # must be refused with the same 404 as an unknown one.
+            _require_organiser(cid)
             try:
                 _svc().settle(cid)
                 flash("Competition finalised.", "ok")
@@ -346,9 +547,16 @@ def _register_routes(app: Flask) -> None:
                                live=live, api_url=url_for("api_verify", cid=cid, _external=False))
 
     # ------------------------------------------------------------- API ---- #
+    # Reads are public (the product's promise is that anyone can verify).
     @app.get("/api/health")
     def api_health():
         return jsonify({"ok": True, "chain_reachable": app.config["CHAIN"].is_reachable()})
+
+    @app.get("/api/me")
+    def api_me():
+        if g.account is None:
+            return jsonify({"authenticated": False}), 200
+        return jsonify({"authenticated": True, "account": g.account})
 
     @app.get("/api/competitions")
     def api_competitions():
@@ -376,22 +584,29 @@ def _register_routes(app: Flask) -> None:
         return jsonify({"competition": comp,
                         "events": _svc().store.list_events(cid)})
 
-    # -- API writes (used by tests; the UI posts forms to the same service) -- #
-    # Errors are left to the central handlers, so a validation error is a 400 and
-    # a conflict (a frozen rubric, a duplicate score) is a 409 — consistently,
-    # for both the API and the forms.
+    # -- API writes --------------------------------------------------------- #
+    # Every write requires (1) an authenticated account, (2) the right role for
+    # this competition, (3) ownership of the specific object, (4) a valid
+    # lifecycle state. The checks are the same service calls the browser routes
+    # use, so a client cannot bypass them by talking to the API directly.
     @app.post("/api/competitions")
     def api_create():
+        if g.account is None:
+            abort(401)
         body = request.get_json(force=True, silent=True) or {}
         cid = _svc().create_competition(
             name=body.get("name", ""), description=body.get("description", ""),
             organiser=body.get("organiser", ""), opens_at=body.get("opens_at", ""),
-            closes_at=body.get("closes_at", ""), judges=body.get("judges") or [])
+            closes_at=body.get("closes_at", ""), judges=body.get("judges") or [],
+            owner_account_id=_account_id())
         return jsonify({"id": cid}), 201
 
     @app.post("/api/competitions/<cid>/rubric")
     def api_set_rubric(cid):
-        _comp_or_404(cid)
+        # No existence pre-check: the ownership gate raises one uniform error for
+        # "unknown competition" and "not your competition", so the response
+        # cannot be used to probe which competitions exist or who owns them.
+        _require_organiser(cid)
         body = request.get_json(force=True, silent=True) or {}
         _svc().set_rubric(cid, body.get("criteria", []), body.get("judges", 1),
                           body.get("tie_break"))
@@ -399,26 +614,34 @@ def _register_routes(app: Flask) -> None:
 
     @app.post("/api/competitions/<cid>/freeze")
     def api_freeze(cid):
-        _comp_or_404(cid)
+        _require_organiser(cid)
         _svc().freeze(cid)
         return jsonify(_svc().get_competition(cid))
 
     @app.post("/api/competitions/<cid>/entries")
     def api_add_entry(cid):
+        if g.account is None:
+            abort(401)
         _comp_or_404(cid)
         body = request.get_json(force=True, silent=True) or {}
         e = _svc().add_entry(cid, stable_id=body.get("stable_id", ""),
                              title=body.get("title", ""), summary=body.get("summary", ""),
-                             link=body.get("link", ""), private=bool(body.get("private")))
+                             link=body.get("link", ""), private=bool(body.get("private")),
+                             submitter_account_id=_account_id())
         return jsonify(e), 201
 
     @app.post("/api/competitions/<cid>/evaluations")
     def api_evaluate(cid):
+        if g.account is None:
+            abort(401)
         _comp_or_404(cid)
         body = request.get_json(force=True, silent=True) or {}
+        # The judge label is the caller's own membership label, never the body's.
+        label = _svc().judge_label(cid, _account_id())
         out = _svc().evaluate(cid, entry_stable_id=body.get("entry", ""),
-                              judge=body.get("judge", ""), scores=body.get("scores", {}),
-                              justification=body.get("justification", ""))
+                              judge=label, scores=body.get("scores", {}),
+                              justification=body.get("justification", ""),
+                              judge_account_id=_account_id())
         return jsonify(out), 201
 
     @app.errorhandler(404)
@@ -427,6 +650,11 @@ def _register_routes(app: Flask) -> None:
             return jsonify({"error": "not found"}), 404
         return render_template("error.html", code=404,
                                message="That competition does not exist."), 404
+
+    @app.context_processor
+    def _inject_auth():
+        """Every template can read the current account and the CSRF token."""
+        return {"account": g.get("account"), "csrf_token": g.get("csrf_token", "")}
 
 
 def _register_error_handlers(app: Flask) -> None:
@@ -441,6 +669,31 @@ def _register_error_handlers(app: Flask) -> None:
 
     def _wants_json() -> bool:
         return request.path.startswith("/api/")
+
+    @app.errorhandler(AuthError)
+    def _auth_error(e):
+        # The same response an unknown competition gives, so a non-owner cannot
+        # learn that a competition exists. HTML: 404 with the identical message.
+        # API: 403 (an authenticated client is told it is a permission problem,
+        # not a missing route) with a uniform body.
+        if _wants_json():
+            return jsonify({"error": "not authorised for this competition"}), 403
+        return render_template("error.html", code=404,
+                               message="That competition does not exist."), 404
+
+    @app.errorhandler(InvitationError)
+    def _invitation_error(e):
+        if _wants_json():
+            return jsonify({"error": "this invitation is not valid"}), 400
+        flash(str(e), "error")
+        return render_template("error.html", code=400, message=str(e)), 400
+
+    @app.errorhandler(401)
+    def _unauth(e):
+        if _wants_json():
+            return jsonify({"error": "authentication required"}), 401
+        flash("Sign in to continue.", "error")
+        return redirect(url_for("login", next=request.path))
 
     @app.errorhandler(ValidationError)
     def _validation(e):

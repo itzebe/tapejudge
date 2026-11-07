@@ -1,8 +1,9 @@
 # TapeJudge — Threat Model
 
-Mission 5 (independent adversarial review). Research date **2026-11-07**.
-Baseline commit `f3c229a`; reviewed working tree adds the hardening described in
-`TAPEJUDGE_VULNERABILITY_REGISTER.md`.
+Mission 5 (independent adversarial review) with the Mission 6 authentication
+work applied. Research date **2026-11-07**. Baseline commit `f3c229a`; the
+reviewed working tree adds the hardening in `TAPEJUDGE_VULNERABILITY_REGISTER.md`
+and the identity/authorisation layer in `MISSION6_SECURITY_REVIEW.md`.
 
 This model states, for each asset and each actor, what the system actually
 protects and what it explicitly does not. It is written to be checkable against
@@ -31,26 +32,31 @@ The integrity properties that follow, and that an attacker would try to break:
 |---|---|---|
 | Frozen rubric + netlist + digests | **Public** (that is the point) | `competitions` table, `/verify`, `/api/.../verify` |
 | Committed evaluations (scores) | **Public after commit** | `evaluations` table |
+| Account email + display name | **Personal data** | `accounts` table; never returned by any public view |
+| Account password | **Secret (hashed only)** | `accounts.password_hash` — scrypt via werkzeug; the plaintext is never stored |
+| Judge membership (account ↔ label) | Authorisation-critical | `memberships` table |
+| Invitation token | **Secret, single-use** | only its SHA-256 is stored (`invitations.token_hash`) |
 | `commit_key` (HMAC key for commitments) | **Secret** | `competitions.commit_key`; never returned by any view |
 | `SECRET_KEY` (Flask session/flash signing) | **Secret** | process config, from `TAPEJUDGE_SECRET` or a per-process random |
 | SQLite file | Integrity-critical | on disk at `TAPEJUDGE_DB` |
 | X Layer RPC access | Read-only, unauthenticated | `https://rpc.xlayer.tech` |
 
-There is **no** user password, **no** API key, **no** wallet key, and **no**
-private user data in the system. That materially shrinks the threat surface:
-there is nothing to phish and nothing to exfiltrate beyond public competition
-data.
+There is **no** API key, **no** wallet key and **no** private key in the system.
+Account passwords are the only credential, and they are stored as a scrypt hash.
+The threat surface that grew with Mission 6 is the account store (email +
+password hash) and the session cookie; both are addressed in §5.
 
 ## 3. Actors
 
 | Actor | Capability assumed |
 |---|---|
 | Anonymous internet client | Can send any HTTP request to any route |
+| Registered account (stranger) | Holds a valid session; not entitled to any specific competition |
 | Malicious entrant | Can submit entries, attempt to spam |
-| Malicious judge | Is a named panel member; can submit scores and declare conflicts |
+| Malicious judge | Holds a judge membership; can submit scores and declare conflicts |
 | Malicious organiser | Creates the competition, sets the rubric, freezes, settles |
 | Network attacker | Can observe/modify traffic if TLS is absent |
-| Compromised host / filesystem reader | Can read the SQLite file directly |
+| Compromised host / filesystem reader | Can read the SQLite file directly (password hashes, token hashes) |
 
 ## 4. Trust boundaries
 
@@ -86,10 +92,19 @@ data.
 | T15 | Write-endpoint spam (entry/evaluation flooding) | In-process fixed-window rate limiter, per (ip, bucket) | Accepted: in-process only, so a multi-instance deploy would need a shared limiter (see the deployment plan) |
 | T16 | Clickjacking | `X-Frame-Options: DENY`, `frame-ancestors 'none'` | None |
 | T17 | MIME sniffing / referrer leakage | `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin` | None |
-| T18 | A compromised judge is not who they claim | **Not defended.** Judge identity is a recorded string, not a verified login | Documented as the top pre-production gap |
+| T18 | A judge is not who they claim — anyone could submit a judge's scores | **Defended (Mission 6).** A judge scores only under the label bound to their authenticated account; the label in the request is ignored; the judge page and evaluation API require a session holding that membership | The account is only as strong as its password; a shared password is a shared identity (accepted — a human factor) |
 | T19 | Judges collude | **Not defended.** TapeJudge makes inputs auditable, not fair | Documented in the UI ("What this proves, and what it does not") |
 | T20 | A stalled X Layer RPC hangs a request | Read client uses a bounded `urlopen` timeout | Accepted: a slow-but-not-dead RPC costs the timeout on the read path only |
 | T21 | TLS downgrade | Left to the deployment (reverse proxy / platform) | Accepted; the app does not terminate TLS itself |
+| T22 | CSRF: a third-party page drives a write with the victim's cookie | `SameSite=Lax` cookie **and** a per-session CSRF token required on every non-safe method, centrally enforced | None observed |
+| T23 | Session fixation: an attacker sets a known session id | Login rotates the session id and the CSRF token (`auth.rotate_session`) | None observed |
+| T24 | Stolen session stays valid after logout / password change | Every request re-validates against the account `session_epoch`; logout-everywhere and password change bump it | None observed |
+| T25 | Credential stuffing / brute force on login | `LoginThrottle` (per-email, fixed window) plus the global write limiter; login never reveals whether an email exists | Accepted: in-process limiter; a multi-instance deploy needs a shared one |
+| T26 | Password theft from the database | scrypt hashes only (werkzeug `generate_password_hash`), constant-time verification; plaintext is never stored or logged | Accepted: a filesystem reader can still attempt an offline crack of a weak password |
+| T27 | Cross-competition / IDOR: act on a competition you do not own | `require_organiser` raises one uniform `AuthError`; HTML → 404 byte-identical to an unknown id, API → uniform 403 | None observed |
+| T28 | Existence oracle: tell "not mine" from "does not exist" | Every organiser HTML route lets the `AuthError` reach the central handler (fixed in Mission 6 — `rubric`, `publish`, `results` previously rendered a 200) | None observed |
+| T29 | A private entry's title leaks through public verification | `verify()` redacts private fields for a non-owner viewer; asserted by test | None observed |
+| T30 | An unauthenticated client creates a competition / submits an entry | Every write route requires a session **and** a CSRF token; anonymous writes are refused | None observed |
 
 ## 6. Explicit non-goals
 
@@ -98,11 +113,16 @@ is who they claim to be, that criteria were the right ones, or that entrants are
 honest. It fixes the rule and makes the arithmetic reproducible. This boundary
 is stated in the product UI, not only in this document.
 
-## 7. The single most important unresolved risk
+## 7. The most important remaining risk
 
-**No authentication (T18).** Every write route is open to anyone who can reach
-the server. For a public production release this is the gate that must be closed
-first — see `TAPEJUDGE_RELEASE_READINESS.md` and
-`TAPEJUDGE_PRODUCTION_DEPLOYMENT_PLAN.md`. The mission's scope was to review and
-harden the MVP, not to add an identity system; this review records the gap
-honestly rather than papering over it.
+**Judicial fairness is still out of scope (T19), and identity is only as strong
+as a password (T25/T26).** TapeJudge now proves *which account* submitted a
+score, not that the judge was fair. That boundary is deliberate and stated in the
+product UI.
+
+The Mission 5 blocker — **no authentication (formerly T18/A-01)** — is closed:
+every write route requires an authenticated session and a CSRF token, judges are
+bound to their membership, and organiser actions are object-scoped. The
+unresolved operational residuals are the in-process rate limiter and the
+single-file SQLite store, both of which are deployment-shape decisions
+(`TAPEJUDGE_PRODUCTION_DEPLOYMENT_PLAN.md`), not application defects.

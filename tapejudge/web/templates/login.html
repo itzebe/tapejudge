@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Sign in · TapeJudge{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Sign in</h1>
+  <p class="sub">An account is required to run a competition, judge one you are
+  invited to, or submit an entry. Reading a rule and verifying a result never
+  needs an account.</p>
+</div>
+
+<div class="split">
+  <div>
+    <form method="post" action="{{ url_for('login', next=request.args.get('next', '')) }}" novalidate>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="next" value="{{ request.args.get('next', '') }}">
+      <div class="panel">
+        <div class="field">
+          <label for="email">Email</label>
+          <input type="email" id="email" name="email" required autocomplete="username"
+                 value="{{ email or '' }}">
+        </div>
+        <div class="field">
+          <label for="password">Password</label>
+          <input type="password" id="password" name="password" required
+                 autocomplete="current-password">
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn primary" type="submit">Sign in</button>
+        <a class="btn" href="{{ url_for('signup') }}">Create an account</a>
+      </div>
+    </form>
+  </div>
+  <div>
+    <div class="notice info">
+      <h3>What an account is for</h3>
+      <p class="small">An account proves <em>which</em> identity is acting: the
+      organiser who owns a competition, the judge invited to score it, or the
+      entrant who submitted. It does not make a score fair — it makes the acting
+      identity verifiable, so a dispute is about facts rather than accounts.</p>
+    </div>
+  </div>
+</div>
+{% endblock %}

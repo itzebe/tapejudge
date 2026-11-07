@@ -50,6 +50,7 @@
         application prepares that call and stops at that boundary. It never sends
         a transaction on your behalf.</p>
         <form method="post" action="{{ url_for('publish', cid=c.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <button class="btn primary" type="submit" name="action" value="publish">Prepare publication</button>
         </form>
       {% else %}
@@ -72,14 +73,22 @@
       <h3>What freezing does <em>not</em> guarantee</h3>
       <ul>
         <li>That judges scored fairly or independently.</li>
-        <li>That a judge is who they claim to be.</li>
         <li>That the criteria you chose are the right ones.</li>
+        <li>That an entry is original or a score is deserved.</li>
       </ul>
-      <p class="small">TapeJudge makes the rule fixed and the arithmetic
-      reproducible. Conflicts of interest, bias and collusion are human problems
-      it does not solve — it makes the inputs auditable so a dispute is about
-      facts, not arithmetic.</p>
+      <p class="small">TapeJudge makes the rule fixed, the acting identity
+      verifiable, and the arithmetic reproducible. Bias and collusion are human
+      problems it does not solve — it makes the inputs and the identities
+      auditable so a dispute is about facts, not arithmetic.</p>
     </div>
+    {% if is_organiser %}
+    <div class="panel">
+      <h3>Judging panel</h3>
+      <p class="small">Invite each judge by email; they accept as a signed-in
+      account and score under their own identifier.</p>
+      <a class="btn" href="{{ url_for('judges', cid=c.id) }}">Manage judges →</a>
+    </div>
+    {% endif %}
     <div class="btn-row">
       {% if c.status != 'draft' %}
       <a class="btn" href="{{ url_for('submit', cid=c.id) }}">Submit entries →</a>

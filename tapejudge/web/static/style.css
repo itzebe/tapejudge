@@ -178,6 +178,13 @@ footer.site .wrap { padding-top: var(--s4); padding-bottom: var(--s5); }
   main { padding-top: var(--s5); }
 }
 
+/* auth nav ----------------------------------------------------------------- */
+form.inline-form { display: inline; margin: 0; }
+nav.site form.inline-form .btn { min-height: 32px; }
+.pill.pending { background: var(--accent-soft); border-color: var(--accent-line); color: var(--warn); }
+.pill.accepted { background: var(--ok-soft); border-color: #b7ddc4; color: var(--ok); }
+.pill.expired, .pill.revoked { background: var(--surface-2); color: var(--ink-3); }
+
 /* a11y -------------------------------------------------------------------- */
 .skip {
   position: absolute; left: -9999px; top: 0; z-index: 100;

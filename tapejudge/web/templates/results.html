@@ -81,6 +81,7 @@
     <a class="btn" href="{{ url_for('api_results', cid=c.id) }}">Results JSON</a>
     {% if c.status != 'settled' and r.ranking and not r.incomplete and not r.invalid and not r.errors %}
     <form method="post" action="{{ url_for('results', cid=c.id) }}" style="display:inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <button class="btn" type="submit">Finalise</button>
     </form>
     {% endif %}

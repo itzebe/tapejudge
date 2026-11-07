@@ -39,8 +39,12 @@ select = ["E", "F", "W", "I", "B", "UP", "S", "SIM", "RUF", "PIE", "BLE", "FURB"
 ignore = ["BLE001", "S112", "RUF001"]
 
 [tool.ruff.lint.per-file-ignores]
-# Assertions in tests are correct and intentional.
-"tests/*.py" = ["S101"]
+# Assertions in tests are correct and intentional. S106: a password literal in a
+# test is a fixture, never a secret.
+"tests/*.py" = ["S101", "S106"]
+# The shared test/demo fixture password is not a secret.
+"tests/authtestkit.py" = ["S105"]
+"demo/run_demo.py" = ["S105"]
 # A module-level self-check assert that pins the TAP-02 selector.
 "tapejudge/xlayer.py" = ["S101"]
 # The Mission 3 core is vendored byte-faithful; its formatting is not ours to

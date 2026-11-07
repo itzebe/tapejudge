@@ -17,6 +17,16 @@
       <a href="{{ url_for('index') }}">Competitions</a>
       <a href="{{ url_for('new_competition') }}">New competition</a>
       <a href="{{ url_for('api_health') }}">Status</a>
+      {% if account %}
+        <a href="{{ url_for('account') }}">{{ account.display_name or account.email }}</a>
+        <form method="post" action="{{ url_for('logout') }}" class="inline-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="btn sm" type="submit">Sign out</button>
+        </form>
+      {% else %}
+        <a href="{{ url_for('login') }}">Sign in</a>
+        <a href="{{ url_for('signup') }}">Create account</a>
+      {% endif %}
     </nav>
   </div>
 </header>
