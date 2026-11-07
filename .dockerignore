@@ -1,0 +1,21 @@
+# Keep the image small and free of local state.
+.git
+.github
+.openhands
+__pycache__
+*.pyc
+.venv
+venv
+tests
+docs
+demo
+evidence
+scripts/*.mjs
+scripts/capture_chain_evidence.py
+*.db
+*.db-wal
+*.db-shm
+.env
+.env.*
+!.env.example
+data

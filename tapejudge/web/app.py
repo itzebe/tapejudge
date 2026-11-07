@@ -25,6 +25,7 @@ Design rules honoured here:
 from __future__ import annotations
 
 import json
+import logging
 import os
 import secrets
 from pathlib import Path
@@ -134,8 +135,15 @@ def _configure_secrets(app: Flask, testing: bool) -> None:
             secret = "dev-only-not-a-secret"  # noqa: S105
         else:
             # A per-process random secret: sessions do not survive a restart, but
-            # nothing is forgeable and no default value is ever shipped.
+            # nothing is forgeable and no default value is ever shipped. This is
+            # still a misconfiguration for a long-lived deployment (every restart
+            # logs everyone out), so say so loudly rather than degrade silently.
             secret = secrets.token_hex(32)
+            logging.getLogger("tapejudge").warning(
+                "TAPEJUDGE_SECRET is not set: using a per-process random secret. "
+                "Sessions will not survive a restart. Set TAPEJUDGE_SECRET for a "
+                "real deployment."
+            )
     app.config["SECRET_KEY"] = secret
 
 

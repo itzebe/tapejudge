@@ -1,0 +1,37 @@
+# TapeJudge — single-instance production stack.
+#
+#   TAPEJUDGE_SECRET=$(python3 -c "import secrets;print(secrets.token_hex(32))") \
+#     docker compose up -d --build
+#
+# One instance is the honest topology for this application: the store is SQLite
+# (single writer) and the rate limiter's state is per process. See
+# docs/TAPEJUDGE_PRODUCTION_DEPLOYMENT_PLAN.md.
+
+services:
+  tapejudge:
+    build: .
+    image: tapejudge:latest
+    restart: unless-stopped
+    # Publish on loopback only; put a TLS-terminating reverse proxy in front
+    # (Caddy, nginx, or the platform's edge) rather than exposing 8080 directly.
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      # Required. The entrypoint and the app both refuse to start without it.
+      TAPEJUDGE_SECRET: ${TAPEJUDGE_SECRET:?set TAPEJUDGE_SECRET to a 32+ byte random value}
+      TAPEJUDGE_DB: /data/tapejudge.db
+      TAPEJUDGE_HOST: 0.0.0.0
+      TAPEJUDGE_PORT: "8080"
+      # Live X Layer reads are wanted in production; unset TAPEJUDGE_SKIP_CHAIN.
+    volumes:
+      - tapejudge-data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request,sys;sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/api/health',timeout=4).status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+volumes:
+  tapejudge-data:
