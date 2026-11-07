@@ -13,7 +13,7 @@
 
 {% if r.invalid or r.errors %}
 <div class="notice err" role="alert">
-  <h3>Result withheld</h3>
+  <h2>Result withheld</h2>
   <p>{{ r.invalid|length + r.errors|length }} entr{{ 'y' if (r.invalid|length + r.errors|length) == 1 else 'ies' }}
      could not be scored: an out-of-range score, or a stored evaluation the frozen
      rules reject. The circuit flags this rather than silently accepting it.</p>
@@ -23,7 +23,7 @@
 
 {% if r.incomplete %}
 <div class="notice warn" role="status">
-  <h3>Judging incomplete</h3>
+  <h2>Judging incomplete</h2>
   <p>Some entries do not yet have a full panel. They are shown below but cannot
   be finalised.</p>
   <ul class="small">
@@ -35,7 +35,7 @@
 {% endif %}
 
 <div class="panel">
-  <h3>Ranking</h3>
+  <h2>Ranking</h2>
   {% if r.ranking %}
   <table>
     <thead>

@@ -10,14 +10,14 @@
 
 {% if c.status != 'draft' %}
 <div class="notice info">
-  <h3>This rubric is frozen</h3>
+  <h2>This rubric is frozen</h2>
   <p>The rule is fixed and cannot be replaced. Digest
     <span class="hash">{{ c.rubric_digest[:24] }}…</span></p>
   <p><a class="btn" href="{{ url_for('publish', cid=c.id) }}">Go to publication →</a></p>
 </div>
 {% elif not is_organiser %}
 <div class="notice warn">
-  <h3>Read-only</h3>
+  <h2>Read-only</h2>
   <p>Only the organiser who created this competition can configure its rubric.
   You can read the rule and, once it is frozen, verify the result.</p>
 </div>
@@ -83,7 +83,7 @@
 
   <div>
     <div class="panel">
-      <h3>The rule, in plain language</h3>
+      <h2>The rule, in plain language</h2>
       {% if preview %}
         <p>{{ preview.sentence }}</p>
         {% if preview.tie_break %}
@@ -113,7 +113,7 @@
 
     {% if c.status == 'draft' and c.rubric_json and is_organiser %}
     <div class="panel">
-      <h3>Freeze the rule</h3>
+      <h2>Freeze the rule</h2>
       <p>Freezing compiles the rule into the circuit above and fixes it. After
       this point it cannot be replaced.</p>
       <form method="post" action="{{ url_for('publish', cid=c.id) }}">

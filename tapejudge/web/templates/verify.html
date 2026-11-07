@@ -11,13 +11,13 @@
 
 {% if rep.frozen_rule_ok %}
 <div class="notice ok" role="status">
-  <h3>✓ The frozen rule is intact</h3>
+  <h2>✓ The frozen rule is intact</h2>
   <p>The rubric digest and the netlist hash recomputed here match the values
   recorded at freeze. The rule did not move.</p>
 </div>
 {% else %}
 <div class="notice err" role="alert">
-  <h3>✗ The frozen rule does not match</h3>
+  <h2>✗ The frozen rule does not match</h2>
   <p>The rubric or netlist recomputed here differs from what was recorded at
   freeze. Do not accept this result.</p>
 </div>
@@ -26,7 +26,7 @@
 <div class="split">
   <div>
     <div class="panel">
-      <h3>1. The identifiers</h3>
+      <h2>1. The identifiers</h2>
       <dl class="kv">
         <dt>Rubric digest</dt>
         <dd class="copy-row"><span class="hash" id="digest">{{ c.rubric_digest }}</span>
@@ -43,7 +43,7 @@
     </div>
 
     <div class="panel">
-      <h3>2. The rule, in plain language</h3>
+      <h2>2. The rule, in plain language</h2>
       {% if c.rubric %}
       <p>Each entry is scored by {{ c.rubric.judges }} judge{{ 's' if c.rubric.judges != 1 else '' }}
         on {{ c.rubric.criteria|length }} criteria:
@@ -58,7 +58,7 @@
     </div>
 
     <div class="panel">
-      <h3>3. Re-run locally in this page</h3>
+      <h2>3. Re-run locally in this page</h2>
       <p class="small">This server recompiled the frozen rubric, re-packed the
       committed scores, re-ran the same TAP-02 evaluator the X Layer contracts
       use, and produced the ranking below. The ranking on the results page is
@@ -85,7 +85,7 @@
 
   <div>
     <div class="panel">
-      <h3>4. Run it against the chain</h3>
+      <h2>4. Run it against the chain</h2>
       {% if c.publication.on_chain %}
         <p class="small">The circuit is published on X Layer. This is a free read.</p>
         <div class="codeblock">{% for cmd in commands %}cast call {{ c.publication.processor }} \
@@ -107,7 +107,7 @@
         {% endif %}
       {% else %}
         <div class="notice warn">
-          <h3>Not published on chain</h3>
+          <h2>Not published on chain</h2>
           <p>{{ c.publication.label }}. A locally compiled circuit is <em>not</em>
           an on-chain circuit. The arithmetic below is reproducible, but there is
           no chain read to compare it against yet.</p>
@@ -119,7 +119,7 @@
     </div>
 
     <div class="panel">
-      <h3>The exact inputs</h3>
+      <h2>The exact inputs</h2>
       <p class="small">The packed input bytes for each entry are in the Verify
       JSON. Packing is little-endian, LSB first, judge-major: for each judge (in
       order), for each criterion (declaration order), the score's bits.</p>
@@ -127,7 +127,7 @@
     </div>
 
     <div class="notice info">
-      <h3>What this proves, and what it does not</h3>
+      <h2>What this proves, and what it does not</h2>
       <p class="small"><strong>Proves:</strong> given these committed scores, this
       is the ranking, and the rule could not have changed. Each score records the
       account that submitted it, bound to the judge identifier it scores under;

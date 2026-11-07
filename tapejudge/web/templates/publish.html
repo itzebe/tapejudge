@@ -11,7 +11,7 @@
 <div class="split">
   <div>
     <div class="panel">
-      <h3>Frozen rule</h3>
+      <h2>Frozen rule</h2>
       {% if c.rubric %}
       <dl class="kv">
         <dt>Rubric digest</dt>
@@ -34,7 +34,7 @@
     </div>
 
     <div class="panel">
-      <h3>Publication state</h3>
+      <h2>Publication state</h2>
       <p><strong>{{ c.publication.label }}</strong></p>
       <dl class="kv">
         <dt>Chain id</dt><dd class="mono">{{ c.publication.chain_id or '—' }}</dd>
@@ -73,7 +73,7 @@
 
   <div>
     <div class="panel">
-      <h3>What freezing guarantees</h3>
+      <h2>What freezing guarantees</h2>
       <ul>
         <li>The rule cannot be changed after this point.</li>
         <li>Anyone can re-run the score for free.</li>
@@ -81,7 +81,7 @@
       </ul>
     </div>
     <div class="notice warn">
-      <h3>What freezing does <em>not</em> guarantee</h3>
+      <h2>What freezing does <em>not</em> guarantee</h2>
       <ul>
         <li>That judges scored fairly or independently.</li>
         <li>That the criteria you chose are the right ones.</li>
@@ -94,7 +94,7 @@
     </div>
     {% if is_organiser %}
     <div class="panel">
-      <h3>Judging panel</h3>
+      <h2>Judging panel</h2>
       <p class="small">Invite each judge by email; they accept as a signed-in
       account and score under their own identifier.</p>
       <a class="btn" href="{{ url_for('judges', cid=c.id) }}">Manage judges →</a>

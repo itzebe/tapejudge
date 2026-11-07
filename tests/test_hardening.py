@@ -410,6 +410,41 @@ class TestStylesheetRegression(unittest.TestCase):
         self.assertIn("min-width: 0", css)
         self.assertIn("overflow-x: auto", css)
 
+    def test_form_and_control_rules_present(self):
+        """Email/password inputs must be styled like every other text input, and
+        a disclosure summary must be a real tap target.
+
+        A 2026-11-07 audit found ``input[type=email]`` and ``input[type=password]``
+        were unstyled (21px tall) on the sign-in and sign-up pages, and ``<summary>``
+        disclosures were 21px tall on the results and verify pages. Both are below
+        the 24px WCAG 2.5.8 minimum.
+        """
+        from pathlib import Path
+        css = (Path(__file__).resolve().parents[1]
+               / "tapejudge" / "web" / "static" / "style.css").read_text()
+        self.assertIn('input[type="email"]', css)
+        self.assertIn('input[type="password"]', css)
+        self.assertIn("summary {", css)
+        self.assertIn("min-height: 32px", css)
+
+
+class TestHeadingOrder(unittest.TestCase):
+    """No template may skip a heading level (WCAG 1.3.1).
+
+    Panels used ``<h3>`` directly under the page ``<h1>``, so every panel was a
+    skipped level. They are ``<h2>`` now; this pins it.
+    """
+
+    def test_no_h3_under_h1_templates(self):
+        from pathlib import Path
+        tdir = Path(__file__).resolve().parents[1] / "tapejudge" / "web" / "templates"
+        offenders = []
+        for path in tdir.glob("*.html"):
+            text = path.read_text()
+            if "<h3" in text:
+                offenders.append(path.name)
+        self.assertEqual(offenders, [], f"templates still use <h3>: {offenders}")
+
 
 if __name__ == "__main__":
     unittest.main()

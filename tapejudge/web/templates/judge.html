@@ -30,7 +30,7 @@
 <div class="split">
   <div>
     <div class="panel">
-      <h3>Frozen rubric</h3>
+      <h2>Frozen rubric</h2>
       <table>
         <thead><tr><th scope="col">Criterion</th><th scope="col" class="num">Weight</th>
           <th scope="col" class="num">Max</th></tr></thead>
@@ -45,7 +45,7 @@
     </div>
 
     <div class="panel">
-      <h3>Declare a conflict of interest</h3>
+      <h2>Declare a conflict of interest</h2>
       <p class="hint">Recording a conflict stops this judge scoring that entry.
       It does not prove the judge is impartial; TapeJudge verifies
       <em>which account</em> acted, not whether that judge was fair.</p>
@@ -73,11 +73,11 @@
       {% set done = matrix.done.get((judge, e.stable_id)) %}
       {% set conflicted = (judge, matrix.id_by_stable[e.stable_id]) in matrix.conflicts %}
       <div class="panel tight">
-        <h3>{{ e.stable_id }}
+        <h2>{{ e.stable_id }}
           {% if done %}<span class="pill settled">✓ committed</span>
           {% elif conflicted %}<span class="pill">conflict recorded</span>
           {% else %}<span class="pill draft">not scored</span>{% endif %}
-        </h3>
+        </h2>
         <p class="small">{{ e.title }}</p>
         {% if done %}
           <p class="small">Committed at <span class="mono">{{ done.created_at }}</span>.</p>

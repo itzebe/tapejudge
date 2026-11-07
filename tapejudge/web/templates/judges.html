@@ -13,7 +13,7 @@
 <div class="split">
   <div>
     <div class="panel">
-      <h3>Invite a judge</h3>
+      <h2>Invite a judge</h2>
       <form method="post" action="{{ url_for('judges', cid=c.id) }}" novalidate>
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="action" value="invite">
@@ -34,7 +34,7 @@
 
     {% if new_token %}
     <div class="panel">
-      <h3>Invitation link — share it now</h3>
+      <h2>Invitation link — share it now</h2>
       <p class="small">This link is shown once and is not stored in a recoverable
       form. Send it to the judge over a channel you trust.</p>
       <div class="codeblock" id="invite-url">{{ request.host_url.rstrip('/') }}{{ invite_url }}</div>
@@ -45,7 +45,7 @@
     {% endif %}
 
     <div class="panel">
-      <h3>Current panel</h3>
+      <h2>Current panel</h2>
       <table>
         <thead><tr><th scope="col">Identifier</th><th scope="col">Accepted</th>
           <th scope="col"></th></tr></thead>
@@ -76,7 +76,7 @@
 
   <div>
     <div class="panel">
-      <h3>Invitations</h3>
+      <h2>Invitations</h2>
       {% if invitations %}
       <table>
         <thead><tr><th scope="col">Identifier</th><th scope="col">Email</th>
@@ -96,7 +96,7 @@
       {% endif %}
     </div>
     <div class="notice info">
-      <h3>What an invitation proves</h3>
+      <h2>What an invitation proves</h2>
       <p class="small">Accepting an invitation proves the judge controls the
       invited email. It does not prove impartiality. Recording a conflict of
       interest remains the judge's own act, and the audit trail keeps both facts

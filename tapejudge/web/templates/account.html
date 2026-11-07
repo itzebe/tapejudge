@@ -7,7 +7,7 @@
 </div>
 
 <div class="panel">
-  <h3>Your roles</h3>
+  <h2>Your roles</h2>
   {% if memberships %}
   <table>
     <thead><tr><th scope="col">Competition</th><th scope="col">Role</th>
@@ -38,7 +38,7 @@
 </div>
 
 <div class="panel">
-  <h3>Session</h3>
+  <h2>Session</h2>
   <form method="post" action="{{ url_for('logout') }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <button class="btn" type="submit">Sign out</button>
