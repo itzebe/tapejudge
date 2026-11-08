@@ -11,6 +11,40 @@ recomputed from stored inputs on every read (no stored result). Vendored Mission
 not reformat. Git remote **`https://github.com/itzebe/tapejudge`** (default
 `master`); no `main` branch.
 
+## Controlled release — 2026-11-08 (FINAL; this is the current release state)
+
+- **One consistent release across GitHub + Vercel.** `master` HEAD **`5b3d98d`**
+  (after PR #2); the deployment implementation merge is **`bb8bc66`** (PR #1).
+  Production deployment `dpl_3Br2vU5keq2KkcQ9DiUBn87ykRSr` @ `5b3d98d`, aliased
+  to https://tapejudge.vercel.app. Evidence: `docs/CONTROLLED_RELEASE_EVIDENCE.md`.
+- **PR #1 was a draft.** Marking it ready via the REST endpoint
+  `POST /pulls/1/ready_for_review` returns **404** for this token; use the GraphQL
+  `markPullRequestReadyForReview` mutation. Both PRs merged with a merge commit.
+- **Auto-deploy IS enabled** (`createDeployments: enabled`): merging to `master`
+  produced a production deployment at the merge commit automatically (`source: git`).
+  Do not assume it is off; the earlier "disabled" reading was wrong.
+- **Secret rotated:** `TAPEJUDGE_SECRET` (shared prod+preview) was rotated in place
+  with a fresh 256-bit value (value never printed; passed inside a script). It
+  signs the session cookie (which carries the CSRF token), so rotation logs
+  everyone out — no lockout, password hashes are unaffected. **A rotation needs a
+  redeploy to take effect.** Redeploy API: `POST /v13/deployments?forceNew=1`
+  with `{"deploymentId": <old>, "target":"production", "name":"tapejudge"}`
+  (the `/v10/.../redeploy` and `/v13/.../redeploy` paths 404).
+- **Postgres test debris:** each test store makes a random `t_<hex>` schema; the
+  suite left 78 on Neon. Dropped 77, kept production **`t_d69196def4cf`** (holds
+  exactly the 3 live competitions). Do NOT set `TAPEJUDGE_DB_SCHEMA` when running
+  the suite — it forces all stores onto one schema and causes spurious failures.
+- **README overclaim fixed (PR #2):** the tagline said the rule "is published …
+  through TapeOut"; nothing is published by default and the UI says a local
+  circuit is not on-chain. Now "frozen as a TapeOut circuit". The UI template
+  gates "published on X Layer" behind `{% if c.publication.on_chain %}` — correct.
+- **Env reset wipes the Python env + the Vercel CLI.** After a sandbox reset:
+  `python3 -m pip install -e '.[dev]' pip-audit` and `npm install vercel
+  --no-save --prefix /tmp/verceltool` (global `npm i -g` fails on permissions).
+  `.env.local` (Neon DSNs) survives.
+- **Known gaps:** `/robots.txt` and `/sitemap.xml` 404; no on-chain circuit exists
+  (by design — the organiser's wallet must sign a funded `tapeout`).
+
 ## Production deployment (Vercel + Neon) — 2026-11-08, PR #1
 
 - **Live:** https://tapejudge.vercel.app. Vercel project `tapejudge`
