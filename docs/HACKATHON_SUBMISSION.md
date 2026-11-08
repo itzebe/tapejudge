@@ -79,7 +79,7 @@ Source: <https://web3.okx.com/xlayer/build-x-series> (X Layer TapeOut Accelerate
 | Requirement | TapeJudge |
 |---|---|
 | Uses TapeOut on X Layer, with addresses | Processor `0x839bdd6fa7a66416a609a735e11de5411b98574e` (processor 0 of factory `0x1f09DAeFA827f02CBb40967cc91b259763760761`), chain 196; selectors and reads verified live (`docs/XLAYER_INTEGRATION_STATUS.md`). |
-| Access link | `https://work-1-gvcyygdjrlurcmdz.prod-runtime.all-hands.dev/` — replace with the final host if you move it. |
+| Access link | <https://tapejudge.vercel.app> — the production deployment (Vercel + Neon Postgres). |
 | Processor address + circuit ID | Processor above. A circuit ID is only meaningful once a real `tapeout` has been sent; the app prepares and can confirm one, and it never claims a circuit ID that does not exist. |
 | Target users | Hackathon and grant organisers, DAO grant rounds, design/art jams, academic prize committees — anyone whose ranking is disputed. |
 | Revenue model | Free to verify forever; a paid organiser tier (private rounds, branded results, API access) once the free tier proves the point. |
@@ -114,14 +114,14 @@ Then, in the live app:
   reproducible; it shows which account scored, not whether a judge was fair.
 - **Demo data is labelled `SYNTHETIC`** everywhere it appears.
 - **No transaction was ever sent** in building or demonstrating this.
-- **Hosting is not durable.** The public URL runs in a sandbox that does not
-  survive a session ending; see `docs/TAPEJUDGE_PRODUCTION_DEPLOYMENT_PLAN.md`.
+- **Hosting is durable.** The app runs on Vercel (`tapejudge.vercel.app`) backed
+  by a Neon Postgres store, so records survive a cold start. The earlier work-host
+  URL was a sandbox and is no longer the access link.
 
 ## Links
 
 - Repository: <https://github.com/itzebe/tapejudge>
-- Live app: `https://work-1-gvcyygdjrlurcmdz.prod-runtime.all-hands.dev/`
-  (replace with the final host when published)
+- Live app: <https://tapejudge.vercel.app>
 - Chain evidence (read-only, reproducible): `evidence/chain_evidence.json`,
   `docs/XLAYER_INTEGRATION_STATUS.md`
 - Publication package: `scripts/prepare_publication.py`
@@ -176,6 +176,6 @@ the circuit back and comparing it byte-for-byte with the frozen netlist.
 **Circuit ID:** none yet — a circuit ID is only real after the prepared `tapeout`
 is signed and broadcast. The app never claims one that does not exist.
 
-**Access link:** `https://work-1-gvcyygdjrlurcmdz.prod-runtime.all-hands.dev/`
+**Access link:** <https://tapejudge.vercel.app>
 
 **Demo video:** `<paste the recorded link>`

@@ -4,6 +4,7 @@
 <div class="crumb"><a href="{{ url_for('index') }}">← Competitions</a> ·
   <a href="{{ url_for('publish', cid=c.id) }}">{{ c.name }}</a></div>
 <div class="page-head">
+  <p class="eyebrow muted-eyebrow">Entries</p>
   <h1>Submit an entry</h1>
   <p class="sub">{{ c.name }} · rule frozen
     <span class="hash">{{ (c.rubric_digest or '')[:16] }}…</span></p>

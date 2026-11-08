@@ -68,6 +68,7 @@ def create_app(*, db_path: str | None = None, chain_client=None,
                 template_folder=str(_HERE / "templates"),
                 static_folder=str(_HERE / "static"))
     _require_production_config(testing)
+    _require_test_isolation(testing)
     _configure_secrets(app, testing)
     _configure_sessions(app)
     app.config["TESTING"] = testing
@@ -153,6 +154,29 @@ def _require_production_config(testing: bool) -> None:
             "refusing to start: TAPEJUDGE_DB_SCHEMA is not set. A serverless host "
             "builds a new store per request; without a stable schema each request "
             "would read an empty database.")
+
+
+def _require_test_isolation(testing: bool) -> None:
+    """A test build must never open the configured production database.
+
+    ``make_store`` selects Postgres whenever ``TAPEJUDGE_DATABASE_URL`` is set,
+    and the schema comes from ``TAPEJUDGE_DB_SCHEMA``. A test run that inherited
+    a deployed shell's environment therefore wrote hundreds of fixture rows into
+    the *production* schema — every test that built an app with the default
+    ``db_path`` shared the live database. Tests get the SQLite store
+    (``db_path=":memory:"`` or ``TAPEJUDGE_DB``); the Postgres path is exercised
+    by ``tests/test_store_contract.py``, which builds its own store against an
+    isolated ``TAPEJUDGE_TEST_DATABASE_URL`` schema and never goes through here.
+
+    Refuse the combination outright rather than rely on every caller passing an
+    explicit path: a guard at the one entry point cannot be forgotten.
+    """
+    if testing and os.environ.get("TAPEJUDGE_DATABASE_URL"):
+        raise RuntimeError(
+            "refusing to start: a testing app must not use the configured "
+            "TAPEJUDGE_DATABASE_URL. Tests use the SQLite store (db_path or "
+            "TAPEJUDGE_DB); the Postgres contract runs against "
+            "TAPEJUDGE_TEST_DATABASE_URL.")
 
 
 def _configure_secrets(app: Flask, testing: bool) -> None:
@@ -317,7 +341,14 @@ def _register_routes(app: Flask) -> None:
     @app.get("/")
     def index():
         comps = _svc().store.list_competitions()
+        # The landing page shows a real, frozen competition as its ledger
+        # preview when one exists, so the example is never fabricated. With no
+        # frozen competition the template falls back to a clearly-labelled
+        # synthetic example.
+        featured = next((c for c in comps if c.get("rubric_digest")), None)
         return render_template("index.html", competitions=comps,
+                               featured=featured,
+                               featured_rubric=(_featured_rubric(featured)),
                                chain_reachable=app.config["CHAIN"].is_reachable())
 
     # Browsers request /favicon.ico on every page even when a PNG/SVG icon is
@@ -857,12 +888,14 @@ def _rubric_preview(comp: dict) -> dict | None:
         return None
     r = comp["rubric"]
     parts = [f"{c['weight']}×({c['name']})" for c in r["criteria"]]
+    n_crit = len(r["criteria"])
     return {
         "criteria": r["criteria"],
         "judges": r["judges"],
         "tie_break": r["tie_break"],
         "sentence": (f"Each entry is scored by {r['judges']} judge"
-                     f"{'s' if r['judges'] != 1 else ''} on {len(r['criteria'])} criteria. "
+                     f"{'s' if r['judges'] != 1 else ''} on {n_crit} "
+                     f"{'criteria' if n_crit != 1 else 'criterion'}. "
                      f"The total is {' + '.join(parts)}, summed across the panel."),
     }
 
@@ -872,6 +905,29 @@ def _max_total(comp: dict) -> int | None:
         return None
     r = comp["rubric"]
     return sum(c["weight"] * c["max_score"] * r["judges"] for c in r["criteria"])
+
+
+def _featured_rubric(comp: dict | None) -> dict | None:
+    """Read the frozen rubric of the featured competition for the landing ledger
+    preview. Returns criteria with a weight share (for the meter) and the max
+    possible total. Read-only; never invents a rule."""
+    if not comp or not comp.get("rubric_json"):
+        return None
+    try:
+        r = json.loads(comp["rubric_json"])
+    except (TypeError, ValueError):
+        return None
+    criteria = r.get("criteria") or []
+    if not criteria:
+        return None
+    weight_sum = sum(int(c.get("weight") or 0) for c in criteria) or 1
+    for c in criteria:
+        c["share"] = round(100 * int(c.get("weight") or 0) / weight_sum)
+    judges = int(r.get("judges") or 1)
+    max_total = sum(int(c.get("weight") or 0) * int(c.get("max_score") or 0)
+                    for c in criteria) * judges
+    return {"criteria": criteria, "judges": judges, "max_total": max_total,
+            "count": len(criteria)}
 
 
 def _judge_matrix(cid: str) -> dict:

@@ -23,7 +23,6 @@
     <nav class="site" aria-label="Primary">
       <a href="{{ url_for('index') }}">Competitions</a>
       <a href="{{ url_for('new_competition') }}">New competition</a>
-      <a href="{{ url_for('api_health') }}">Status</a>
       {% if account %}
         <a href="{{ url_for('account') }}">{{ account.display_name or account.email }}</a>
         <form method="post" action="{{ url_for('logout') }}" class="inline-form">
@@ -32,7 +31,7 @@
         </form>
       {% else %}
         <a href="{{ url_for('login') }}">Sign in</a>
-        <a href="{{ url_for('signup') }}">Create account</a>
+        <a class="btn sm" href="{{ url_for('signup') }}">Create account</a>
       {% endif %}
     </nav>
   </div>
@@ -53,8 +52,15 @@
 
 <footer class="site">
   <div class="wrap">
-    TapeJudge — the rubric is a machine you can run, not a promise you have to believe.
-    Scoring is computed locally by the same TAP-02 evaluator the X Layer contracts run.
+    <p style="max-width:60ch"><span class="foot-brand">TapeJudge</span> — the rubric
+    is a machine you can run, not a promise you have to believe. Scoring is
+    computed locally by the same TAP-02 evaluator the X Layer contracts run.</p>
+    <p class="small" style="margin-bottom:0">
+      <a href="{{ url_for('index') }}">Competitions</a> ·
+      <a href="{{ url_for('new_competition') }}">New competition</a> ·
+      <a href="{{ url_for('api_health') }}">Status</a>
+      {% if account %} · <a href="{{ url_for('account') }}">Account</a>{% endif %}
+    </p>
     {% block footer_extra %}{% endblock %}
   </div>
 </footer>

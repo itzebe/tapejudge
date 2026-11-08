@@ -28,19 +28,20 @@ Total target: **2:40**.
 
 ## Preparation
 
-1. Start the app and confirm it is healthy:
-   ```bash
-   curl -s http://127.0.0.1:12000/api/health
-   ```
-2. Open the **SYNTHETIC — Demo Judging Round** competition. Do not create new
+1. Confirm the app is healthy — locally (`curl -s http://127.0.0.1:12000/api/health`)
+   or on the production host (`curl -s https://tapejudge.vercel.app/api/health`);
+   both answer `{"chain_reachable":true,"ok":true}`.
+2. Open the **SYNTHETIC — Demo Judging Round** competition on
+   <https://tapejudge.vercel.app> (id `comp_563ebff5be18`). Do not create new
    data live if the recording is one take; the demo competition already has a
    frozen rule, entries and scores.
-3. Have these tabs open before you hit record:
-   - `/c/comp_3801e585d939` (overview)
-   - `/c/comp_3801e585d939/rubric`
-   - `/c/comp_3801e585d939/results`
-   - `/c/comp_3801e585d939/verify`
-   - `/c/comp_3801e585d939/publish`
+3. Have these tabs open before you hit record (the demo competition has no
+   separate overview route; `/results` is the public hub):
+   - `/c/comp_563ebff5be18/results` (public ranking — the hub)
+   - `/c/comp_563ebff5be18/verify` (independent verification)
+   - `/c/comp_563ebff5be18/rubric` (frozen rule; organiser view)
+   - `/c/comp_563ebff5be18/judges` (panel)
+   - `/c/comp_563ebff5be18/publish` (honest publication state)
 4. If the chain is briefly unreachable, the publish page says so honestly — that
    is a feature. Do not hide it; if it happens, re-record that shot when the RPC
    answers.

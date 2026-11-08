@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_macros.html" import state_rail %}
 {% block title %}{{ c.name }} · Verify · TapeJudge{% endblock %}
 {% block content %}
 <div class="crumb"><a href="{{ url_for('index') }}">← Competitions</a> ·
@@ -11,13 +12,13 @@
 
 {% if rep.frozen_rule_ok %}
 <div class="notice ok" role="status">
-  <h2>✓ The frozen rule is intact</h2>
+  <h2>The frozen rule is intact</h2>
   <p>The rubric digest and the netlist hash recomputed here match the values
   recorded at freeze. The rule did not move.</p>
 </div>
 {% else %}
 <div class="notice err" role="alert">
-  <h2>✗ The frozen rule does not match</h2>
+  <h2>The frozen rule does not match</h2>
   <p>The rubric or netlist recomputed here differs from what was recorded at
   freeze. Do not accept this result.</p>
 </div>
@@ -86,6 +87,7 @@
   <div>
     <div class="panel">
       <h2>4. Run it against the chain</h2>
+      {{ state_rail(c) }}
       {% if c.publication.on_chain %}
         <p class="small">The circuit is published on X Layer. This is a free read.</p>
         <div class="codeblock">{% for cmd in commands %}cast call {{ c.publication.processor }} \

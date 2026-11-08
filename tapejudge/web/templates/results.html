@@ -3,10 +3,12 @@
 {% block content %}
 <div class="crumb"><a href="{{ url_for('index') }}">← Competitions</a></div>
 <div class="page-head">
+  <p class="eyebrow muted-eyebrow">Result</p>
   <h1>{{ c.name }}</h1>
   <p class="sub">
     {% if c.status == 'settled' %}<span class="pill settled">Final</span>
     {% else %}<span class="pill {{ c.status }}">{{ c.status }}</span>{% endif %}
+    {% if c.organiser %}<span class="muted">· {{ c.organiser }}</span>{% endif %}
     {% if c.rubric_digest %}· rule <span class="hash">{{ c.rubric_digest[:16] }}…</span>{% endif %}
   </p>
 </div>
@@ -36,14 +38,17 @@
 
 <div class="panel">
   <h2>Ranking</h2>
+  <p class="small muted">Computed by the frozen circuit from the committed
+  scores — never stored. Totals are the weighted criterion subtotals, summed
+  across the panel.</p>
   {% if r.ranking %}
-  <table>
+  <table class="rank-table">
     <thead>
       <tr>
         <th scope="col" class="num">#</th>
         <th scope="col">Entry</th>
         <th scope="col" class="num">Total</th>
-        {% for crit in criteria %}<th scope="col" class="num">{{ crit.name }}</th>{% endfor %}
+        {% for crit in criteria %}<th scope="col" class="num">{{ crit.name }}<span class="sr-only"> (weight {{ crit.weight }})</span></th>{% endfor %}
       </tr>
     </thead>
     <tbody>

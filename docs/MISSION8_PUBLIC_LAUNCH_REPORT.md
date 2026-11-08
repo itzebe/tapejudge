@@ -1,5 +1,10 @@
 # TapeJudge — Mission 8: public launch and hackathon readiness
 
+> Historical record of the 2026-11-07 launch pass. The public URL below was a
+> work-host sandbox; the project has since moved to the durable deployment at
+> <https://tapejudge.vercel.app> (Vercel + Neon Postgres) — see
+> `docs/FINAL_RELEASE_REPORT.md` §6. This file is kept as-is.
+
 Research/execution date: **2026-11-07**. Baseline `1e9bd88`; this pass is
 `d10c4c1` (and the documentation commit that follows it). This report states what
 was executed, what was verified live, what is blocked and why.
