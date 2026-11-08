@@ -121,6 +121,53 @@ Rules:
   `/results` and their `/api` forms — require no account. That is the product's
   promise and it is unchanged.
 
+## Test database isolation
+
+A test process must never be able to open the production (or any hosted)
+database. This is a hard contract, enforced at the one entry point every test
+builds an app through.
+
+**The incident it closes.** A test run inherited a deployed shell's environment —
+`VERCEL` plus `POSTGRES_*` — so `make_store()` selected the live PostgreSQL DSN
+and hundreds of fixture rows were written into the *production* schema.
+
+**The contract.** `create_app(testing=True)` calls `_require_test_isolation`
+before it builds anything. The guard **fails closed**: if *any* hosted-database
+indicator is present it raises `RuntimeError` and refuses to start, before
+`make_store()` is reached.
+
+Indicators (`_HOSTED_DB_INDICATORS` in `tapejudge/web/app.py`):
+
+| Variable | Why it counts |
+|---|---|
+| `VERCEL` | The serverless marker; `_require_production_config` treats it as hosted |
+| `TAPEJUDGE_DATABASE_URL` | The DSN `make_store()` selects Postgres from |
+| `DATABASE_URL`, `POSTGRES_URL`, `POSTGRES_URL_NON_POOLING`, `POSTGRES_PRISMA_URL` | Hosted-DSN aliases a deploy may expose |
+| `POSTGRES_HOST`, `POSTGRES_USER` | Discrete parts: a DSN could be assembled from them |
+
+Deliberately **not** indicators: `TAPEJUDGE_DB` (a SQLite file path — legitimate
+in a test) and `TAPEJUDGE_TEST_DATABASE_URL` (the isolated contract DSN, which
+never flows through `create_app`).
+
+**Why fail closed, not fall back.** Silently degrading to SQLite would mask a
+misconfigured test host: the operator would believe their Postgres tests ran when
+they did not. The guard refuses instead.
+
+**Legitimate PostgreSQL integration testing.** The store contract
+(`tests/test_store_contract.py`) runs both halves. The SQLite half always runs.
+The Postgres half runs only when `TAPEJUDGE_TEST_DATABASE_URL` points at a
+reachable, throwaway server; each test then builds its own random `c_<hex>`
+schema and never touches `TAPEJUDGE_DB_SCHEMA`. It constructs the store directly
+(`PostgresStore(dsn, schema=...)`) and never calls `create_app`, so the guard is
+not in its path. When the variable is unset the Postgres half is **skipped with a
+reason** — a skip is not a pass.
+
+Regression coverage: `tests/test_deployment.py`
+(`test_testing_app_refuses_the_production_database`,
+`test_testing_app_fails_closed_on_every_hosted_db_indicator`,
+`test_testing_app_guard_does_not_hide_behind_sqlite`,
+`test_testing_app_starts_clean_with_no_hosted_indicators`).
+
 ## Extension points
 
 * **A real signer.** `xlayer.py` `prepare_tapeout` already returns the exact

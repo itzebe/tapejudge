@@ -120,7 +120,93 @@ class TestVercelDeployment(unittest.TestCase):
             os.environ["TAPEJUDGE_DB_SCHEMA"] = "tapejudge-prod"
             with self.assertRaises(RuntimeError) as ctx:
                 create_app(testing=True)
-            self.assertIn("testing app must not use", str(ctx.exception))
+            self.assertIn("testing app must not run with a hosted database",
+                          str(ctx.exception))
+        finally:
+            os.environ.clear()
+            os.environ.update(base)
+
+    def test_testing_app_fails_closed_on_every_hosted_db_indicator(self):
+        """Every route to a hosted database must be refused in a test process.
+
+        A guard that checks one variable is not enough: a deployed shell can
+        present the DSN under several names, or only the ``VERCEL`` marker, or
+        only the discrete ``POSTGRES_*`` parts. Each must fail closed, and the
+        failure must happen *before* any store is built — proven by patching
+        ``make_store`` to explode if it is ever reached.
+        """
+        import importlib
+        from unittest import mock
+
+        # ``tapejudge.web`` re-exports a Flask *instance* named ``app``, which
+        # shadows the submodule attribute; import the module by its full name.
+        app_module = importlib.import_module("tapejudge.web.app")
+
+        indicators = [
+            "VERCEL",
+            "TAPEJUDGE_DATABASE_URL",
+            "DATABASE_URL",
+            "POSTGRES_URL",
+            "POSTGRES_URL_NON_POOLING",
+            "POSTGRES_PRISMA_URL",
+            "POSTGRES_HOST",
+            "POSTGRES_USER",
+        ]
+        # A combination, to prove the guard is not satisfied by clearing one var.
+        combos = [[name] for name in indicators] + [
+            ["VERCEL", "POSTGRES_HOST", "POSTGRES_USER"],
+            ["DATABASE_URL", "POSTGRES_URL"],
+        ]
+        base = dict(os.environ)
+        for combo in combos:
+            with self.subTest(present=combo):
+                try:
+                    for name in indicators:
+                        os.environ.pop(name, None)
+                    for name in combo:
+                        os.environ[name] = "postgresql://u:p@h/db" if name != "VERCEL" else "1"
+                    with (
+                        mock.patch.object(app_module, "make_store",
+                                          side_effect=AssertionError("make_store reached")),
+                        self.assertRaises(RuntimeError) as ctx,
+                    ):
+                        app_module.create_app(testing=True)
+                    self.assertIn("hosted database configuration present",
+                                  str(ctx.exception))
+                finally:
+                    os.environ.clear()
+                    os.environ.update(base)
+
+    def test_testing_app_guard_does_not_hide_behind_sqlite(self):
+        """The guard refuses; it must not 'helpfully' fall back to SQLite.
+
+        A silent fallback would mask a misconfigured test host instead of
+        surfacing it, and the operator would believe their Postgres tests ran.
+        """
+        from tapejudge.web.app import create_app
+
+        base = dict(os.environ)
+        try:
+            os.environ["POSTGRES_URL"] = "postgresql://u:p@h/db"
+            with self.assertRaises(RuntimeError):
+                create_app(db_path=":memory:", testing=True)
+        finally:
+            os.environ.clear()
+            os.environ.update(base)
+
+    def test_testing_app_starts_clean_with_no_hosted_indicators(self):
+        """The normal SQLite test path must still build a working app."""
+        from tapejudge.web.app import create_app
+
+        base = dict(os.environ)
+        try:
+            for name in ("VERCEL", "TAPEJUDGE_DATABASE_URL", "DATABASE_URL",
+                         "POSTGRES_URL", "POSTGRES_URL_NON_POOLING",
+                         "POSTGRES_PRISMA_URL", "POSTGRES_HOST", "POSTGRES_USER"):
+                os.environ.pop(name, None)
+            app = create_app(db_path=":memory:", testing=True)
+            self.assertTrue(app.config["TESTING"])
+            self.assertIsNotNone(app.config["STORE"])
         finally:
             os.environ.clear()
             os.environ.update(base)

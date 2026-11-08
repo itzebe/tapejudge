@@ -61,6 +61,22 @@ from .ratelimit import RateLimiter
 
 _HERE = Path(__file__).resolve().parent
 
+# Every environment variable whose presence means a *hosted* database could be
+# selected. A testing app must present none of them (see _require_test_isolation).
+# Deliberately excludes TAPEJUDGE_DB (a SQLite file path) and
+# TAPEJUDGE_TEST_DATABASE_URL (the isolated Postgres contract DSN, which never
+# flows through create_app).
+_HOSTED_DB_INDICATORS = (
+    "VERCEL",                     # the serverless marker: _require_production_config
+    "TAPEJUDGE_DATABASE_URL",     # the DSN make_store() selects Postgres from
+    "DATABASE_URL",               # generic hosted-DSN aliases a deploy may expose
+    "POSTGRES_URL",
+    "POSTGRES_URL_NON_POOLING",
+    "POSTGRES_PRISMA_URL",
+    "POSTGRES_HOST",
+    "POSTGRES_USER",
+)
+
 
 def create_app(*, db_path: str | None = None, chain_client=None,
                testing: bool = False) -> Flask:
@@ -157,26 +173,32 @@ def _require_production_config(testing: bool) -> None:
 
 
 def _require_test_isolation(testing: bool) -> None:
-    """A test build must never open the configured production database.
+    """A test build must never open a hosted or production database.
 
-    ``make_store`` selects Postgres whenever ``TAPEJUDGE_DATABASE_URL`` is set,
-    and the schema comes from ``TAPEJUDGE_DB_SCHEMA``. A test run that inherited
-    a deployed shell's environment therefore wrote hundreds of fixture rows into
-    the *production* schema — every test that built an app with the default
-    ``db_path`` shared the live database. Tests get the SQLite store
-    (``db_path=":memory:"`` or ``TAPEJUDGE_DB``); the Postgres path is exercised
-    by ``tests/test_store_contract.py``, which builds its own store against an
-    isolated ``TAPEJUDGE_TEST_DATABASE_URL`` schema and never goes through here.
+    The incident this closes: a test run inherited a deployed shell's
+    environment (``VERCEL`` plus ``POSTGRES_*``), so ``make_store`` selected the
+    live PostgreSQL DSN and hundreds of fixture rows were written into the
+    *production* schema. Checking a single variable is not enough — a hosted
+    environment can present the DSN under any of several names, or only as
+    discrete ``POSTGRES_*`` parts, or only as the ``VERCEL`` marker.
 
-    Refuse the combination outright rather than rely on every caller passing an
-    explicit path: a guard at the one entry point cannot be forgotten.
+    So this guard **fails closed**: if *any* hosted-database indicator is present
+    in a test process it refuses to start, before :func:`make_store` is reached,
+    rather than silently degrading to SQLite. Tests get the SQLite store
+    (``db_path=":memory:"`` or ``TAPEJUDGE_DB``). The PostgreSQL contract
+    (``tests/test_store_contract.py``) never goes through here: it builds its own
+    store against an explicitly isolated ``TAPEJUDGE_TEST_DATABASE_URL`` schema.
     """
-    if testing and os.environ.get("TAPEJUDGE_DATABASE_URL"):
+    if not testing:
+        return
+    present = sorted(v for v in _HOSTED_DB_INDICATORS if os.environ.get(v))
+    if present:
         raise RuntimeError(
-            "refusing to start: a testing app must not use the configured "
-            "TAPEJUDGE_DATABASE_URL. Tests use the SQLite store (db_path or "
-            "TAPEJUDGE_DB); the Postgres contract runs against "
-            "TAPEJUDGE_TEST_DATABASE_URL.")
+            "refusing to start: a testing app must not run with a hosted "
+            "database configuration present (" + ", ".join(present) + "). "
+            "Tests use the SQLite store (db_path or TAPEJUDGE_DB); the "
+            "PostgreSQL contract runs against an isolated "
+            "TAPEJUDGE_TEST_DATABASE_URL schema and never through create_app.")
 
 
 def _configure_secrets(app: Flask, testing: bool) -> None:
@@ -225,6 +247,18 @@ def _register_security_headers(app: Flask) -> None:
         resp.headers.setdefault("X-Content-Type-Options", "nosniff")
         resp.headers.setdefault("X-Frame-Options", "DENY")
         resp.headers.setdefault("Referrer-Policy", "same-origin")
+        # Deny powerful browser features the app never uses. An empty allowlist
+        # disables each for this origin (and its frames) rather than leaving the
+        # browser default in place.
+        resp.headers.setdefault(
+            "Permissions-Policy",
+            "accelerometer=(), camera=(), geolocation=(), gyroscope=(), "
+            "magnetometer=(), microphone=(), payment=(), usb=()")
+        # Same-origin-allow-popups keeps the browsing context isolated while still
+        # permitting the popups a wallet flow may open; the window object is not
+        # shared with cross-origin documents.
+        resp.headers.setdefault("Cross-Origin-Opener-Policy",
+                                "same-origin-allow-popups")
         resp.headers.setdefault(
             "Content-Security-Policy",
             "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "

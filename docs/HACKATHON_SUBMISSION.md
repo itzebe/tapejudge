@@ -15,8 +15,9 @@ nobody can reproduce the maths, because the scoring rule lives in a spreadsheet
 and the totals are whatever the organiser says they are. TapeJudge compiles the
 scoring rule into a TapeOut circuit, freezes and hashes it, and computes the
 ranking **by re-running that circuit from the stored inputs** every time it is
-requested — so anyone can re-run it for free and get the same numbers. It runs
-on X Layer, and it is a working app, not a slide.
+requested — so anyone can re-run it for free and get the same numbers. The frozen
+rules are TapeOut circuits on X Layer; the app itself is a working product, not a
+slide.
 
 ---
 
@@ -59,20 +60,30 @@ canonical, public, reproducible form.
 
 Source: <https://web3.okx.com/xlayer/build-x-series> (X Layer TapeOut Accelerate).
 
-- **Deadline:** December 7, 2026, 23:59 UTC (the page notes this is provisional
-  and the official page confirms the final date).
+- **Deadline:** December 7, 2026, 23:59 UTC. The page itself calls this
+  **provisional** — "the official event page will confirm the final date".
 - **Submission:** the submission Google Form.
-- **Must use X Layer:** "Your project must use TapeOut circuits, contracts or
-  onchain data on X Layer and provide the relevant addresses."
+- **Must build in the TapeOut ecosystem.** Exact wording: *"Projects must build
+  within the TapeOut ecosystem and either use TapeOut circuits, contracts, or
+  onchain data on X Layer, or run on X Layer DeWEB."* So the gate is an
+  either/or: circuits/contracts/onchain-data **or** a DeWEB deployment. TapeJudge
+  satisfies the first branch (real `tapeout`/`eval` calls against the live
+  processor).
 - **Access link required:** "Websites, apps and tools must provide an access
   link and explain which TapeOut ecosystem projects or features they use."
 - **Circuit projects** must submit the processor contract address and circuit ID.
+- **Named ecosystem capabilities** (from the *Ecosystem Integration* criterion):
+  DeWEB, FabX, TapeCode, TapeKit, TapeSend. The page is explicit that *"the use
+  of any specific project or tool is not required"* — so naming them is not a
+  scoring requirement, and TapeJudge does not claim to use any it has not
+  verified.
 - **Description must cover:** the product/service, target users and how to reach
   them, the proposed revenue model, and why users would pay and keep using it.
 - **Demo video:** recommended no more than three minutes; cover the problem, core
   features, target users and business model, and how TapeOut is used.
 - **Judging:** User Value & Commercial Potential · Innovation · Ecosystem
-  Integration · Product Readiness & UX · Demo Video.
+  Integration · Product Readiness & UX · Demo Video (official X Layer + TapeOut
+  teams jointly).
 
 ## How TapeJudge maps to the requirements
 
