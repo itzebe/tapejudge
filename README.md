@@ -1,7 +1,7 @@
 # TapeJudge
 
-**Competition scoring whose rule is published and frozen through TapeOut, and
-whose final scores anyone can independently reproduce.**
+**Competition scoring whose rule is frozen as a TapeOut circuit, and whose
+final scores anyone can independently reproduce.**
 
 TapeJudge is a working web application for running a judged competition on the
 X Layer ecosystem. An organiser writes a scoring rule; TapeJudge compiles that
@@ -19,7 +19,7 @@ a fixed, public rule and a reproducible result.
 
 | The promise | How TapeJudge keeps it |
 |---|---|
-| **The rule is published and frozen.** | The rubric is compiled into a circuit and hashed. Freezing is irreversible: the store refuses to replace a frozen rubric, and the service refuses to freeze twice. |
+| **The rule is frozen, and can be published on chain.** | The rubric is compiled into a circuit and hashed. Freezing is irreversible: the store refuses to replace a frozen rubric, and the service refuses to freeze twice. Publication to X Layer is a real, funded `tapeout` transaction the organiser signs; the app prepares it and confirms it, and never claims an on-chain circuit before one exists. |
 | **Evaluations follow those rules.** | Every score is validated against the frozen rubric (integer, in range, every criterion present) before it is stored. The circuit's own `valid` output is a second, independent check. |
 | **Anyone can reproduce the final scores.** | The result is recomputed from stored inputs every time it is requested — there is no stored "final score" to trust. `/verify` recompiles the rule, re-packs the scores and re-runs the same TAP-02 evaluator, and shows the exact call to reproduce it on chain. |
 
