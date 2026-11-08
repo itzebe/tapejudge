@@ -94,7 +94,7 @@ Source: <https://web3.okx.com/xlayer/build-x-series> (X Layer TapeOut Accelerate
 | Processor address + circuit ID | Processor above. A circuit ID is only meaningful once a real `tapeout` has been sent; the app prepares and can confirm one, and it never claims a circuit ID that does not exist. |
 | Target users | Hackathon and grant organisers, DAO grant rounds, design/art jams, academic prize committees — anyone whose ranking is disputed. |
 | Revenue model | Free to verify forever; a paid organiser tier (private rounds, branded results, API access) once the free tier proves the point. |
-| Demo video | Script and shot list in `docs/FINAL_DEMO_SCRIPT.md`. |
+| Demo video | `demo/tapejudge-final-demo.mp4` (2:00). Recorded shot list and narration in `docs/FINAL_DEMO_VIDEO.md`; planning script in `docs/FINAL_DEMO_SCRIPT.md`. |
 
 ## Demo script (about 5 minutes, all offline-safe)
 

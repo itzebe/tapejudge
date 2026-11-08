@@ -1,5 +1,11 @@
 # TapeJudge — final demo video script
 
+> **This is the planning script.** The recording has since been produced; the
+> authoritative document — the shot list that was actually recorded, the
+> narration verbatim, the honesty notes and how to reproduce it — is
+> [`docs/FINAL_DEMO_VIDEO.md`](FINAL_DEMO_VIDEO.md). The video is
+> [`demo/tapejudge-final-demo.mp4`](../demo/tapejudge-final-demo.mp4) (2:00).
+
 The hackathon recommends a demo of **no more than three minutes** covering: the
 problem, a demonstration of the core features, the target users and business
 model, and how TapeOut is used. This script is written to that brief. Record it

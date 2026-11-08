@@ -77,3 +77,9 @@ ignore = ["BLE001", "S112", "RUF001"]
 # package it operates on, which is what lets the script run as a file.
 "scripts/purge_demo_competitions.py" = ["S608", "E402"]
 "scripts/reset_production_store.py" = ["S608", "E402"]
+# The demo-video recorder is a development-only tool that runs ffmpeg/Piper with
+# fixed, non-user arguments (S603/S607), uses a fixture password that is not a
+# secret (S105), writes a temp working dir and the bundled Piper voice path
+# (S108), fetches a fixed loopback URL (S310), and asserts a timing invariant
+# that must hold for the recording to stay in sync (S101).
+"scripts/demo_video.py" = ["S603", "S607", "S105", "S108", "S310", "S101"]

@@ -25,7 +25,7 @@ evidence are complete — with the one honest blocker (durable hosting) named.
 | Favicon 404 fixed | `tapejudge/web/app.py`, `tests/test_web.py` | Browsers request `/favicon.ico` on every page; it was a logged 404. Now served from the declared SVG. |
 | Mobile tap target fixed | `tapejudge/web/templates/publish.html` | The tx-hash field had no `type`, so the input styling (and its 40px min-height) never applied — a 22px target on mobile. |
 | Auto-start after reset | `scripts/autostart.sh`, `~/.bashrc` | The work-host runtime does not survive a session ending; a guarded, idempotent start restores the demo after a reset. |
-| Submission kit + demo script | `docs/HACKATHON_SUBMISSION.md`, `docs/FINAL_DEMO_SCRIPT.md` | Maps the project to the official requirements read from the event page. |
+| Submission kit + demo | `docs/HACKATHON_SUBMISSION.md`, `demo/tapejudge-final-demo.mp4` (`docs/FINAL_DEMO_VIDEO.md`) | Maps the project to the official requirements read from the event page. |
 
 ---
 
