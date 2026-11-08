@@ -67,6 +67,7 @@ def create_app(*, db_path: str | None = None, chain_client=None,
     app = Flask(__name__,
                 template_folder=str(_HERE / "templates"),
                 static_folder=str(_HERE / "static"))
+    _require_production_config(testing)
     _configure_secrets(app, testing)
     _configure_sessions(app)
     app.config["TESTING"] = testing
@@ -120,6 +121,38 @@ def _register_rate_limit(app: Flask, testing: bool) -> None:
             return render_template("error.html", code=429,
                                    message="Too many requests. Please slow down."), 429
         return None
+
+
+def _require_production_config(testing: bool) -> None:
+    """Refuse a hosted start that would silently lose data or ship a weak secret.
+
+    A serverless host sets ``VERCEL`` (and often ``VERCEL_ENV``). There the two
+    graceful local fallbacks are both wrong: a per-process random secret logs
+    every user out on each cold start, and the default SQLite ``:memory:`` store
+    is wiped on every invocation, so the deployment would look healthy while
+    persisting nothing. Fail loudly at boot instead of degrading. Local runs,
+    the test suite and the container are unaffected (they do not set ``VERCEL``).
+    """
+    if testing or not os.environ.get("VERCEL"):
+        return
+    if os.environ.get("TAPEJUDGE_ALLOW_DEV_SECRET") == "1":
+        raise RuntimeError(
+            "refusing to start: TAPEJUDGE_ALLOW_DEV_SECRET must not be set on a "
+            "hosted deployment")
+    if not os.environ.get("TAPEJUDGE_SECRET"):
+        raise RuntimeError(
+            "refusing to start: TAPEJUDGE_SECRET is not set. A hosted deployment "
+            "must have a fixed secret or sessions are lost on every cold start.")
+    if not os.environ.get("TAPEJUDGE_DATABASE_URL"):
+        raise RuntimeError(
+            "refusing to start: TAPEJUDGE_DATABASE_URL is not set. Vercel's "
+            "function filesystem is not persistent, so the SQLite store would "
+            "lose every record; configure a PostgreSQL DSN.")
+    if not os.environ.get("TAPEJUDGE_DB_SCHEMA"):
+        raise RuntimeError(
+            "refusing to start: TAPEJUDGE_DB_SCHEMA is not set. A serverless host "
+            "builds a new store per request; without a stable schema each request "
+            "would read an empty database.")
 
 
 def _configure_secrets(app: Flask, testing: bool) -> None:

@@ -7,6 +7,7 @@ a store the app cannot write.
 """
 from __future__ import annotations
 
+import os
 import unittest
 from pathlib import Path
 
@@ -80,6 +81,99 @@ class TestProductionPlanConsistency(unittest.TestCase):
             self.assertIn(key, env)
         # The insecure escape hatches must be documented as dev-only.
         self.assertIn("TAPEJUDGE_ALLOW_DEV_SECRET", env)
+
+
+class TestVercelDeployment(unittest.TestCase):
+    """The Vercel artifacts must match the app's real entrypoint and contract."""
+
+    def test_root_entrypoint_exports_the_wsgi_app(self):
+        # Vercel's Flask preset looks for a WSGI `app` at main.py.
+        main = ROOT / "main.py"
+        self.assertTrue(main.exists(), "main.py entrypoint is missing")
+        text = main.read_text()
+        self.assertIn("from tapejudge.web.app import app", text)
+        self.assertIn('__all__ = ["app"]', text)
+
+    def test_vercel_json_selects_the_flask_framework(self):
+        import json
+
+        cfg = json.loads((ROOT / "vercel.json").read_text())
+        self.assertEqual(cfg["framework"], "flask")
+        self.assertIn("main.py", cfg.get("functions", {}))
+
+    def test_vercelignore_excludes_heavy_non_runtime_dirs(self):
+        text = (ROOT / ".vercelignore").read_text()
+        for d in ("tests/", "evidence/", "docs/", "scripts/", "demo/"):
+            self.assertIn(d, text)
+
+    def test_serverless_start_refuses_missing_secret_and_dsn(self):
+        """A hosted start must fail loudly, never degrade to a weak secret or SQLite.
+
+        Simulated by setting the ``VERCEL`` marker the platform provides; the
+        guard must refuse, so a misconfigured deploy cannot silently lose data.
+        """
+        from tapejudge.web.app import create_app
+
+        base = dict(os.environ)
+        try:
+            os.environ["VERCEL"] = "1"
+            os.environ.pop("TAPEJUDGE_SECRET", None)
+            os.environ.pop("TAPEJUDGE_DATABASE_URL", None)
+            os.environ.pop("TAPEJUDGE_DB_SCHEMA", None)
+            with self.assertRaises(RuntimeError):
+                create_app(db_path=":memory:", testing=False)
+
+            os.environ["TAPEJUDGE_SECRET"] = "x" * 32
+            with self.assertRaises(RuntimeError):
+                create_app(db_path=":memory:", testing=False)
+
+            os.environ["TAPEJUDGE_DATABASE_URL"] = "postgresql://u:p@h/db"
+            with self.assertRaises(RuntimeError):
+                create_app(db_path=":memory:", testing=False)
+        finally:
+            os.environ.clear()
+            os.environ.update(base)
+
+    def test_stable_schema_env_wins_over_random(self):
+        """On Postgres the schema must be stable across instances when asked."""
+        from tapejudge.store import _pg_schema
+
+        base = dict(os.environ)
+        try:
+            os.environ["TAPEJUDGE_DB_SCHEMA"] = "tapejudge-prod"
+            first = _pg_schema(":memory:")
+            second = _pg_schema(":memory:")
+            self.assertEqual(first, second, "schema must be stable, not random")
+            self.assertTrue(first.startswith("t_"))
+        finally:
+            os.environ.clear()
+            os.environ.update(base)
+
+    def test_default_schema_is_random_for_in_memory(self):
+        from tapejudge.store import _pg_schema
+
+        base = dict(os.environ)
+        try:
+            os.environ.pop("TAPEJUDGE_DB_SCHEMA", None)
+            self.assertNotEqual(_pg_schema(":memory:"), _pg_schema(":memory:"))
+        finally:
+            os.environ.clear()
+            os.environ.update(base)
+
+    def test_pyproject_declares_the_postgres_driver_as_runtime(self):
+        """Vercel installs only ``[project.dependencies]``, not an extra.
+
+        The durable store needs ``psycopg`` at runtime, so it must be a base
+        dependency: as an optional extra it is absent on the host and every
+        request fails at import (the observed FUNCTION_INVOCATION_FAILED).
+        """
+        import tomllib
+
+        data = tomllib.loads((ROOT / "pyproject.toml").read_text())
+        deps = data["project"]["dependencies"]
+        self.assertTrue(
+            any(d.startswith("psycopg") for d in deps),
+            "psycopg must be a base dependency for a serverless deploy")
 
 
 if __name__ == "__main__":

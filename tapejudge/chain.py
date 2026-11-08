@@ -16,6 +16,11 @@ import urllib.request
 X_LAYER_RPC = "https://rpc.xlayer.tech"
 X_LAYER_CHAIN_ID = 196
 
+# The default read timeout. A serverless function has a wall-clock budget, so a
+# reachability probe on a request path passes a much shorter one (see
+# XLayerClient.is_reachable); a full verification read keeps the generous default.
+RPC_TIMEOUT = 25
+
 # Read-only selectors, TAP-02 §6.
 SEL_NEXT_ID = "0x61b8ce8c"
 SEL_CIRCUIT_INFO = "0x084d60f1"
@@ -30,7 +35,7 @@ class RpcError(RuntimeError):
     pass
 
 
-def _rpc(method: str, params: list, url: str = X_LAYER_RPC, timeout: int = 25):
+def _rpc(method: str, params: list, url: str = X_LAYER_RPC, timeout: int = RPC_TIMEOUT):
     body = json.dumps({"jsonrpc": "2.0", "method": method, "params": params, "id": 1}).encode()
     req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
@@ -44,8 +49,8 @@ def eth_call(to: str, data: str, url: str = X_LAYER_RPC) -> str:
     return _rpc("eth_call", [{"to": to, "data": data}, "latest"], url)
 
 
-def block_number(url: str = X_LAYER_RPC) -> int:
-    return int(_rpc("eth_blockNumber", [], url), 16)
+def block_number(url: str = X_LAYER_RPC, timeout: int = RPC_TIMEOUT) -> int:
+    return int(_rpc("eth_blockNumber", [], url, timeout), 16)
 
 
 def get_transaction_receipt(tx_hash: str, url: str = X_LAYER_RPC) -> dict | None:
