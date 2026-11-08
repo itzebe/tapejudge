@@ -162,3 +162,30 @@ username prompt.
 - Docs added: `docs/MISSION8_PUBLIC_LAUNCH_REPORT.md`,
   `docs/HACKATHON_SUBMISSION.md`; README + deployment plan updated for the
   single-instance host and the two stores.
+
+## Final hardening pass (2026-11-08)
+- **Publication confirmation closed the last real integration gap.** Before this,
+  `PUBLISH_ONCHAIN_VERIFIED` was never set. Now `verify_circuit_against_chain`
+  (`xlayer.py`) reads `netlist(id)` back and compares byte-for-byte with the
+  frozen netlist; the service marks published only on a match. `get_receipt` /
+  `get_transaction_receipt` added. Confirm route + form in `publish.html`.
+  `tests/test_publication.py` (7). Also `scripts/prepare_publication.py` prints
+  the unsigned tx + `cast` commands.
+- **`tapeout` selector is `0x7bd3ac1d`**, pinned by
+  `assert selector("tapeout(bytes,uint32,uint32)") == TAPEOUT_SELECTOR` in
+  `xlayer.py`. Do not trust a selector typed from memory (I wrote `0x09c117e2`
+  first and had to correct it against the code + the calldata prefix).
+- **Browser favicon 404:** Chrome requests `/favicon.ico` even with an SVG icon
+  declared; added an explicit route serving the SVG. `test_web.py` pins it.
+- **Tap-target footgun:** an `<input>` with no `type` gets no input styling, so
+  its min-height never applies (22px target). Always set `type="text"`.
+- **Autostart mitigation:** the sandbox has no service manager (PID 1 is
+  `openhands-agent`); `scripts/autostart.sh` (idempotent, non-blocking, no-op if
+  already up) is invoked from `~/.bashrc` so the demo returns after a reset. It
+  cannot make the sandbox a managed host.
+- Final gates: suite **246 OK** (skipped=8), journey probe 13/13, a11y 0/0/0 at
+  390/768/1440, ruff clean, public URL 200s and serves the new code.
+- Deliverables: `docs/HACKATHON_SUBMISSION.md` (rewritten to the official
+  requirements read 2026-11-08), `docs/FINAL_DEMO_SCRIPT.md`,
+  `docs/FINAL_HACKATHON_EVIDENCE.md`, `docs/FINAL_RELEASE_REPORT.md`,
+  `evidence/screenshots/`.
