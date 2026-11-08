@@ -138,6 +138,11 @@ class TestApi(unittest.TestCase):
     def test_health(self):
         self.assertEqual(self.client.get("/api/health").get_json()["ok"], True)
 
+    def test_favicon_ico_served(self):
+        r = self.client.get("/favicon.ico")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("image/svg+xml", r.headers["Content-Type"])
+
     def test_create_and_get(self):
         cid = build_via_api(self.client, app=self.app, freeze=False, evaluate=False)
         data = self.client.get(f"/api/competitions/{cid}").get_json()

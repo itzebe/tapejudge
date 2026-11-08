@@ -39,6 +39,7 @@ from flask import (
     redirect,
     render_template,
     request,
+    send_from_directory,
     session,
     url_for,
 )
@@ -285,6 +286,13 @@ def _register_routes(app: Flask) -> None:
         comps = _svc().store.list_competitions()
         return render_template("index.html", competitions=comps,
                                chain_reachable=app.config["CHAIN"].is_reachable())
+
+    # Browsers request /favicon.ico on every page even when a PNG/SVG icon is
+    # declared. Serve the SVG there so the page never logs a 404 for it.
+    @app.get("/favicon.ico")
+    def favicon():
+        return send_from_directory(app.static_folder, "favicon.svg",
+                                   mimetype="image/svg+xml")
 
     # --------------------------------------------------------------- auth -- #
     @app.route("/login", methods=["GET", "POST"])
