@@ -73,7 +73,7 @@
           <form method="post" action="{{ url_for('publish', cid=c.id) }}" class="stack">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <label for="tx_hash">Transaction hash</label>
-            <input id="tx_hash" name="tx_hash" class="mono" placeholder="0x…"
+            <input id="tx_hash" name="tx_hash" type="text" class="mono" placeholder="0x…"
                    pattern="0x[0-9a-fA-F]{64}" required>
             <button class="btn" type="submit" name="action" value="confirm">Confirm publication</button>
           </form>
