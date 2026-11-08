@@ -265,3 +265,36 @@ username prompt.
   requirements read 2026-11-08), `docs/FINAL_DEMO_SCRIPT.md`,
   `docs/FINAL_HACKATHON_EVIDENCE.md`, `docs/FINAL_RELEASE_REPORT.md`,
   `evidence/screenshots/`.
+
+## Demo video (2026-11-08, branch `feat/final-demo-video` @ `f0a6a94`)
+- **Deliverable:** `demo/tapejudge-final-demo.mp4` — **2:15**, 1280×712 H.264 +
+  AAC. Recorded on a **local instance** of the real app, not production. The
+  authoritative doc is `docs/FINAL_DEMO_VIDEO.md` (recorded shot list, verbatim
+  narration, honesty notes, reproduction). `docs/FINAL_DEMO_SCRIPT.md` is now
+  only the planning script and points at it.
+- **Baseline:** `origin/master` = **`5d62342`** ("Fail-closed test-DB isolation…
+  (#5)"). The local `master` ref here was `4bf0d3d` and **stale** — always fetch
+  and branch from `origin/master`. `harden/test-db-isolation` diverged.
+- **Tool:** `scripts/demo_video.py` (dev-only; not a project dependency).
+  Commands: `seed` (isolated synthetic DB via the real service), `narrate`
+  (Piper), `record` (Playwright + `ffmpeg -f x11grab` on Xvfb `:99`), `assemble`,
+  `verify`. Only `demo/…mp4` + `docs/…md` + `evidence/final-demo-scenes/` are
+  repo artifacts; everything else lives in `$TMPDIR/tapejudge-demo`.
+- **Environment quirks that cost time:**
+  - Chromium `--app=` **did not** hide its toolbar here, so every frame is
+    cropped to the page: `crop=1280:712:0:88` (top 88px is chrome). Do not assume
+    `--app` is chromeless.
+  - `page.evaluate` cannot see Python-local helpers; pass them as args
+    (`([k,t,s]) => …`, `[kicker,title,sub]`).
+  - `input[name=crit_weight]` is type=number; `fill("3")` is correct (not
+    `fill(3)`).
+  - `.first` on a Playwright locator is a **property** (`loc.first`), not a call.
+- **Verification:** `verify` checks each scene's frame luma std (not blank) and
+  per-scene audio (not silent); all 9 scenes pass, `PROBLEMS: none`. Scene
+  content OCR'd (frozen notice, "nothing has been sent", ranking 139/114/105,
+  "The frozen rule is intact"). Suite 258 passed / 8 skipped, ruff clean.
+- **Honesty model held:** synthetic data labelled `SYNTHETIC`, isolated local DB,
+  no wallet, no key, no transaction; the publish scene stops at
+  `onchain_pending_signature` and says "nothing has been sent". The processor
+  address / OKB fee on the X Layer card are read live from chain 196.
+- **Not pushed / no PR** — awaiting explicit instruction.
