@@ -8,7 +8,39 @@ Standalone Flask + SQLite MVP: a judged-competition scoring app whose scoring
 rule is compiled to a TapeOut circuit and frozen, and whose ranking is
 recomputed from stored inputs on every read (no stored result). Vendored Mission
 3 core (`netlist/rubric/engine/verifier/lifecycle/chain`) is byte-faithful — do
-not reformat. Own local git repo, **no remote**.
+not reformat. Git remote **`https://github.com/itzebe/tapejudge`** (default
+`master`); no `main` branch.
+
+## Production deployment (Vercel + Neon) — 2026-11-08, PR #1
+
+- **Live:** https://tapejudge.vercel.app. Vercel project `tapejudge`
+  (`prj_c6Nvlf262Z1B0OQfe5Tiaw6mf2xT`), team `team_wxFCzsPoY7GBXnRvV1fIwUsz`
+  (slug `marvinsjones06-1839`). Git auto-deploy connected.
+- **DB:** a **free Neon Postgres** provisioned through the Vercel marketplace
+  (`vercel integration accept-terms neon --yes`, then `vercel integration add
+  neon`). The Supabase org is at its 2-active-free-project cap, so Neon was the
+  unblock. Use the **unpooled** endpoint (`DATABASE_URL_UNPOOLED`): the store
+  keeps one connection per instance and sets a session-level `search_path`,
+  which a transaction-mode PgBouncer pooler does not preserve.
+- **Env (production + preview):** `TAPEJUDGE_SECRET` (fixed 32-hex),
+  `TAPEJUDGE_DATABASE_URL` (unpooled DSN), `TAPEJUDGE_DB_SCHEMA`
+  (`tapejudge-prod` / `tapejudge-preview`), `TAPEJUDGE_ENABLE_HSTS=1`.
+- **THE bug that cost the first deploy:** Vercel installs **only
+  `[project.dependencies]` and ignores an optional extra**. `psycopg` in the
+  `server` extra was never installed → `ModuleNotFoundError: No module named
+  'psycopg'` → `FUNCTION_INVOCATION_FAILED` on every request (build log said
+  "Installing required dependencies from pyproject.toml", no error). Fixed by
+  promoting `psycopg[binary]>=3.2` to a base dependency; `tests/test_deployment.py`
+  pins it. A `requirements.txt` is NOT read when `pyproject.toml` exists.
+- **Serverless store rule:** each request builds a new store instance, so the
+  Postgres schema must be **stable** (`TAPEJUDGE_DB_SCHEMA`); a random schema
+  reads an empty database. `create_app` refuses to boot when `VERCEL` is set and
+  the secret/DSN/schema is missing (never a random secret, never `:memory:`).
+- **Deploy command:** `vercel deploy --prod --yes --token "$VERCEL_TOKEN"
+  --scope team_wxFCzsPoY7GBXnRvV1fIwUsz` (CLI at `~/.npm-global/bin`).
+- **Verify a deploy:** `/api/health` → `{"chain_reachable":true,"ok":true}`;
+  `node scripts/journey_probe.mjs https://tapejudge.vercel.app` → 13/13;
+  `node scripts/a11y_audit.mjs <url> / /login /new` → `failing: 0`.
 
 ## Commands that matter
 
