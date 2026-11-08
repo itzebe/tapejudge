@@ -70,7 +70,7 @@ Re-verified against <https://web3.okx.com/xlayer/build-x-series> on 2026-11-08.
 | Access link + explain which TapeOut features are used | <https://tapejudge.vercel.app>; `docs/XLAYER_INTEGRATION_STATUS.md` names the contract, selectors and reads. |
 | Circuit projects: processor address + circuit ID | Processor address given. **No circuit ID is claimed** — no `tapeout` has been sent, and the app says so. |
 | Description: product, users, revenue model, why users pay and stay | `docs/HACKATHON_SUBMISSION.md`. |
-| Demo video ≤ 3 min | `docs/FINAL_DEMO_SCRIPT.md`. |
+| Demo video ≤ 3 min | `demo/tapejudge-final-demo.mp4` (2:00). Details in `docs/FINAL_DEMO_VIDEO.md`. |
 | Judging: User Value & Commercial Potential · Innovation · Ecosystem Integration · Product Readiness & UX · Demo Video | Mapped in `docs/HACKATHON_SUBMISSION.md`. |
 
 **Honest caveat.** The **"TapeOut Idea Scouts" sub-campaign** (2,000 USDT / 30
