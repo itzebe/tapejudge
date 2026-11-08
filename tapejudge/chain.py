@@ -48,6 +48,15 @@ def block_number(url: str = X_LAYER_RPC) -> int:
     return int(_rpc("eth_blockNumber", [], url), 16)
 
 
+def get_transaction_receipt(tx_hash: str, url: str = X_LAYER_RPC) -> dict | None:
+    """The receipt for a transaction hash, or ``None`` while it is unmined.
+
+    A missing receipt is an honest "not yet mined" (``None``), never an error: a
+    caller must not read an absent receipt as a success.
+    """
+    return _rpc("eth_getTransactionReceipt", [tx_hash], url)
+
+
 def _uint(x: int) -> str:
     return f"{x:064x}"
 

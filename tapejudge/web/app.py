@@ -444,6 +444,13 @@ def _register_routes(app: Flask) -> None:
                     result = _svc().publish(cid)
                     cat = "ok" if result["mode"] != "local_only" else "warn"
                     flash(_publish_message(result), cat)
+                elif action == "confirm":
+                    result = _svc().confirm_publication(
+                        cid, tx_hash=(request.form.get("tx_hash") or "").strip())
+                    if result["verified"]:
+                        flash("Publication confirmed on X Layer: " + result["reason"], "ok")
+                    else:
+                        flash("Not confirmed: " + result["reason"], "warn")
                 return redirect(url_for("publish", cid=cid))
             except (ValidationError, ConflictError) as e:
                 flash(str(e), "error")

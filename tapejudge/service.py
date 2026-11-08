@@ -287,6 +287,66 @@ class TapeJudgeService:
                              {"mode": prepared["mode"], "chain_id": prepared["chain_id"]})
         return prepared
 
+    def confirm_publication(self, cid: str, *, tx_hash: str,
+                            circuit_id: int | None = None) -> dict:
+        """Confirm a *real* tapeout and, only if it matches, mark it published.
+
+        The organiser (or anyone) supplies the transaction hash of the tapeout
+        they broadcast. This reads the receipt and the circuit back from X Layer
+        and, only when the receipt succeeded **and** the on-chain netlist equals
+        the frozen one, records ``onchain_verified``. Anything else is reported
+        honestly and leaves the competition in its prepared state: a hash that is
+        not a successful tapeout is never accepted as a publication.
+
+        This is a read-only confirmation. The app still holds no key and sends
+        nothing.
+        """
+        comp = self._require(cid)
+        if comp["status"] == "draft":
+            raise ValidationError("freeze the rubric before confirming a publication")
+        netlist = bytes.fromhex(comp["netlist_hex"][2:])
+        cid_on_chain = circuit_id if circuit_id is not None else comp.get("circuit_id")
+        if cid_on_chain is None:
+            raise ValidationError(
+                "no circuit id is recorded; prepare the publication first")
+
+        receipt = None
+        try:
+            receipt = self.chain.get_receipt(tx_hash)
+        except Exception as e:
+            return {"verified": False, "state": "unavailable",
+                    "reason": f"could not read the transaction receipt: {e}",
+                    "tx_hash": tx_hash}
+        if receipt is None:
+            return {"verified": False, "state": "pending",
+                    "reason": ("No receipt yet — the transaction is not mined. "
+                               "Nothing has been recorded as published."),
+                    "tx_hash": tx_hash}
+        status = receipt.get("status")
+        if status is not None and int(status, 16) != 1:
+            return {"verified": False, "state": "reverted",
+                    "reason": ("The transaction reverted on chain; no circuit was "
+                               "created. Nothing has been recorded as published."),
+                    "tx_hash": tx_hash, "receipt": receipt}
+
+        check = self.chain.verify_publication(cid_on_chain, netlist,
+                                              comp.get("processor"))
+        if check["verdict"] != "match":
+            return {"verified": False, "state": check["verdict"],
+                    "reason": check["reason"], "tx_hash": tx_hash,
+                    "verification": check, "receipt": receipt}
+
+        self.store.record_publication(
+            cid, chain_id=X_LAYER_CHAIN_ID, processor=check["processor"],
+            circuit_id=cid_on_chain, tx_hash=tx_hash,
+            mode=PUBLISH_ONCHAIN_VERIFIED,
+            fee_wei=None)
+        self.store.log_event(cid, "publication_confirmed",
+                             {"tx_hash": tx_hash, "circuit_id": cid_on_chain,
+                              "netlist_sha256": check["chain_netlist_sha256"]})
+        return {"verified": True, "state": "verified", "reason": check["reason"],
+                "tx_hash": tx_hash, "verification": check, "receipt": receipt}
+
     def tapeout_integration_state(self) -> dict:
         """The honest, machine-readable state of the X Layer integration.
 

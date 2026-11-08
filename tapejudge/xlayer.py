@@ -159,12 +159,75 @@ class XLayerClient:
         return _chain.verify_circuit_against_chain(
             processor or self.processor, cid, list(samples), self.rpc_url)
 
+    def verify_publication(self, circuit_id: int, expected_netlist: bytes,
+                           processor: str | None = None) -> dict:
+        """Confirm a real on-chain circuit matches the frozen netlist.
+
+        This is the read half of publication: given the circuit id the app
+        recorded when it prepared the tapeout, read the circuit back from X Layer
+        and compare it, byte for byte, with the frozen netlist. It is the only
+        thing that can move a competition from *prepared* to *published* — a
+        prepared call is not a publication, and the app must never claim one is.
+
+        Returns an honest verdict, never an exception for an expected state:
+
+        * ``match`` — the circuit exists and its netlist equals the frozen one;
+        * ``mismatch`` — a circuit exists at that id but the bytes differ;
+        * ``not_found`` — no circuit exists at that id (the tapeout never landed);
+        * ``unavailable`` — the RPC could not be read, so the state is *unknown*.
+        """
+        import hashlib
+        proc = processor or self.processor
+        out = {
+            "processor": proc,
+            "circuit_id": circuit_id,
+            "expected_netlist_sha256": hashlib.sha256(expected_netlist).hexdigest(),
+            "chain_netlist_sha256": None,
+            "chain_info": None,
+            "verdict": "unavailable",
+            "reason": "",
+        }
+        try:
+            info = self.circuit_info(circuit_id, proc)
+            on_chain = self.netlist(circuit_id, proc)
+        except Exception as e:
+            msg = str(e)
+            # "no circuit" is the contract's own answer for an id that was never
+            # taped out — a definitive "not found", not an outage.
+            if "no circuit" in msg.lower():
+                out["verdict"] = "not_found"
+                out["reason"] = (
+                    f"No circuit #{circuit_id} exists on {proc}; the tapeout has "
+                    "not been mined, or it was recorded with the wrong id.")
+            else:
+                out["verdict"] = "unavailable"
+                out["reason"] = f"X Layer RPC could not be read: {msg}"
+            return out
+        out["chain_info"] = info
+        out["chain_netlist_sha256"] = hashlib.sha256(on_chain).hexdigest()
+        if on_chain == expected_netlist:
+            out["verdict"] = "match"
+            out["reason"] = (
+                f"Circuit #{circuit_id} on {proc} carries the frozen netlist "
+                f"(sha256 {out['chain_netlist_sha256']}).")
+        else:
+            out["verdict"] = "mismatch"
+            out["reason"] = (
+                f"Circuit #{circuit_id} exists but its netlist is "
+                f"{out['chain_netlist_sha256']}, not the frozen "
+                f"{out['expected_netlist_sha256']}.")
+        return out
+
     def is_reachable(self) -> bool:
         try:
             self.block_number()
             return True
         except Exception:
             return False
+
+    def get_receipt(self, tx_hash: str) -> dict | None:
+        """The receipt for a transaction hash, or ``None`` while it is unmined."""
+        return _chain.get_transaction_receipt(tx_hash, self.rpc_url)
 
     # -- publication (preparation only) ------------------------------------ #
     def prepare_tapeout(self, netlist: bytes, n_in: int, n_out: int,

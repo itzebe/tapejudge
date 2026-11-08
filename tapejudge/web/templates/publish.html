@@ -64,6 +64,20 @@
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <button class="btn primary" type="submit" name="action" value="publish">Prepare publication</button>
         </form>
+        <details class="confirm-box">
+          <summary class="small">Already broadcast the tapeout? Confirm it here</summary>
+          <p class="small">Paste the transaction hash of the <span class="mono">tapeout</span>
+          you signed. TapeJudge reads the receipt and the circuit back from X Layer
+          and marks this competition published <em>only</em> if the on-chain netlist
+          matches the frozen one. It never sends anything.</p>
+          <form method="post" action="{{ url_for('publish', cid=c.id) }}" class="stack">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label for="tx_hash">Transaction hash</label>
+            <input id="tx_hash" name="tx_hash" class="mono" placeholder="0x…"
+                   pattern="0x[0-9a-fA-F]{64}" required>
+            <button class="btn" type="submit" name="action" value="confirm">Confirm publication</button>
+          </form>
+        </details>
       {% else %}
         <p class="small">The circuit exists on X Layer. Its evaluation is a free
         read; anyone can reproduce the score.</p>
