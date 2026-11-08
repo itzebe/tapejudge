@@ -1,0 +1,40 @@
+# Keep the Vercel function bundle to the application and its runtime files.
+# Tests, evidence, docs, the demo and local scripts are not needed to serve a
+# request, so they are excluded from the deployment to stay well under the
+# function size limit.
+
+# Version control and local tooling
+.git
+.gitignore
+.github
+.openhands
+.ruff_cache
+.pytest_cache
+.vercel
+
+# Local environment files (secrets) must never enter the bundle
+.env
+.env.*
+
+# Tests, demo, evidence and local scripts
+tests/
+demo/
+evidence/
+scripts/
+
+# Local data and caches
+*.db
+*.sqlite
+*.sqlite3
+*.log
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Docs are useful in the repo, not in the function bundle
+docs/
+Dockerfile
+docker-compose.yml
+.dockerignore
+LICENSE
+README.md

@@ -196,24 +196,40 @@ def make_store(db_path: str = ":memory:"):
     SQLite file cannot be used there). Otherwise the SQLite file/``:memory:``
     store is used — the default for local use and for the test suite. The two
     implement the same interface (:mod:`tapejudge.store_pg`), so the service,
-    engine and web layers never branch on which one they hold. The driver import
-    is deferred so ``psycopg`` stays an optional dependency for local use.
+    engine and web layers never branch on which one they hold. The driver
+    (``psycopg``) ships with the package, so the import is deferred only to keep
+    a SQLite-only run from paying for it at import time.
 
-    On Postgres each store instance gets its own schema: a random one for an
-    in-memory request (so independent instances never collide, mirroring a fresh
-    ``:memory:``) and a stable one derived from a file path (so two instances
-    that name the same path share their data, mirroring a SQLite file).
+    On Postgres each store instance gets its own schema. On a long-lived host two
+    instances that name the same SQLite path share their data, so the schema is
+    derived from that path. A serverless host has no file and builds a new
+    instance for every request, so there the schema must be *stable* across
+    instances or each request would read an empty database; ``TAPEJUDGE_DB_SCHEMA``
+    names it explicitly (see :func:`_pg_schema`).
     """
     dsn = os.environ.get("TAPEJUDGE_DATABASE_URL")
     if not dsn:
         return Store(db_path)
     from .store_pg import PostgresStore
+    return PostgresStore(dsn, schema=_pg_schema(db_path))
+
+
+def _pg_schema(db_path: str) -> str:
+    """The Postgres schema a store instance uses.
+
+    An explicit ``TAPEJUDGE_DB_SCHEMA`` wins — the setting a serverless deploy
+    needs so every instance shares one schema. Otherwise the schema is derived
+    from the SQLite path (so two instances that name the same path share their
+    data, mirroring a SQLite file), or is random for an in-memory request (so
+    independent instances never collide, mirroring a fresh ``:memory:``).
+    """
+    explicit = os.environ.get("TAPEJUDGE_DB_SCHEMA")
+    if explicit:
+        return "t_" + hashlib.sha256(explicit.encode()).hexdigest()[:12]
     if db_path in (None, "", ":memory:"):
-        schema = "t_" + uuid.uuid4().hex[:12]
-    else:
-        schema = "t_" + hashlib.sha256(
-            os.path.abspath(db_path).encode()).hexdigest()[:12]
-    return PostgresStore(dsn, schema=schema)
+        return "t_" + uuid.uuid4().hex[:12]
+    return "t_" + hashlib.sha256(
+        os.path.abspath(db_path).encode()).hexdigest()[:12]
 
 
 class Store:

@@ -119,8 +119,10 @@ Two interchangeable stores back the app (selected by configuration):
   disk. Back it up as below.
 - **Postgres** (`TAPEJUDGE_DATABASE_URL`) — the durable option for a host with
   no persistent filesystem (a serverless platform) or for more than one
-  instance. Install the driver with `pip install -e '.[server]'`. Migrations run
-  on first use; the schema is created if absent.
+  instance. The driver ships with the package (`psycopg`); `pip install -e
+  '.[server]'` is still accepted as an alias. Migrations run on first use; the
+  schema is created if absent. On a serverless host also set
+  `TAPEJUDGE_DB_SCHEMA` so the schema is stable across instances.
 
 The store of *inputs* is the record of the competition, so it must be durable.
 

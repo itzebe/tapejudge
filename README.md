@@ -92,6 +92,30 @@ TAPEJUDGE_DATA_DIR=/var/lib/tapejudge TAPEJUDGE_PORT=12000 \
 Set `TAPEJUDGE_DATABASE_URL` instead to run against a durable Postgres store on
 a host that has no persistent disk (see the deployment plan).
 
+### Run it on Vercel (serverless)
+
+Vercel's Python runtime detects the Flask preset. `main.py` is the entrypoint
+(it re-exports the same `app` the container runs), `vercel.json` selects the
+preset, and `.vercelignore` keeps tests, evidence and local env files out of the
+bundle. A Vercel function has **no persistent filesystem**, so the deployment
+must use the durable Postgres store; `create_app` refuses to start on a hosted
+host (`VERCEL` set) without the required configuration, so a misconfigured
+deploy fails loudly instead of losing data or shipping a weak secret.
+
+```bash
+vercel env add TAPEJUDGE_DATABASE_URL    # a PostgreSQL DSN (e.g. Neon)
+vercel env add TAPEJUDGE_DB_SCHEMA       # a stable schema name, e.g. tapejudge-prod
+vercel env add TAPEJUDGE_SECRET          # a fixed 32+ char session secret
+vercel --prod
+```
+
+Set `TAPEJUDGE_DB_SCHEMA` to a **stable** name: each request builds a new store
+instance, so without it every request would read an empty schema. Use the
+**direct** (non-pooled) Postgres endpoint: the store keeps one connection per
+instance and sets a session-level `search_path`, which a transaction-mode pooler
+does not preserve. `TAPEJUDGE_ENABLE_HSTS=1` enables HSTS on the deployment's
+own domain.
+
 ---
 
 ## The eight screens
@@ -163,7 +187,7 @@ tapejudge/
     app.py        # Flask app, routes, JSON API.
     templates/    # The eight screens.
     static/       # CSS, a little progressive-enhancement JS, favicon.
-tests/            # Unit + web + integration + deployment tests (237).
+tests/            # Unit + web + integration + deployment tests (253).
 demo/run_demo.py  # End-to-end demonstration.
 scripts/          # capture_chain_evidence.py
 evidence/         # chain_evidence.json — read-only proof, reproducible.
@@ -197,7 +221,8 @@ evaluator agrees with the chain. They never send a transaction.
 | Variable | Default | Meaning |
 |---|---|---|
 | `TAPEJUDGE_DB` | `:memory:` | SQLite path. Use a file for persistence. |
-| `TAPEJUDGE_DATABASE_URL` | unset | A PostgreSQL DSN. When set, the durable Postgres store is used instead of SQLite (needs `pip install -e '.[server]'`). |
+| `TAPEJUDGE_DATABASE_URL` | unset | A PostgreSQL DSN. When set, the durable Postgres store is used instead of SQLite. The driver ships with the package; `pip install -e '.[server]'` still works as an alias. |
+| `TAPEJUDGE_DB_SCHEMA` | unset | The Postgres schema the store uses. Required on a serverless host (Vercel): a function builds a new store per request, so a stable schema is what makes data persist across invocations. |
 | `TAPEJUDGE_HOST` / `TAPEJUDGE_PORT` | `127.0.0.1` / `8080` | Dev server bind. |
 | `TAPEJUDGE_SECRET` | a per-process random value | Flask session key. Set a real one in production; the app refuses a fixed default. |
 | `TAPEJUDGE_SKIP_CHAIN` | unset | `1` skips the live chain tests. |

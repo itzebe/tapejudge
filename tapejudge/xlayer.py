@@ -219,8 +219,15 @@ class XLayerClient:
         return out
 
     def is_reachable(self) -> bool:
+        """Whether the X Layer RPC answers a cheap read right now.
+
+        A reachability probe sits on the request path (the health endpoint and
+        the competition list), so it uses a short timeout: a serverless function
+        must not spend its whole budget waiting on a stalled RPC. An unreachable
+        node is reported honestly as unreachable, never as a stalled request.
+        """
         try:
-            self.block_number()
+            _chain.block_number(self.rpc_url, timeout=4)
             return True
         except Exception:
             return False

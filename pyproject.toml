@@ -5,6 +5,11 @@ description = "Competition scoring whose rule is a frozen TapeOut circuit on X L
 requires-python = ">=3.11"
 dependencies = [
     "flask>=3.0",
+    # The PostgreSQL driver for the durable, shared store. A hosted deployment
+    # (Vercel) has no persistent filesystem, so it must use Postgres, and Vercel
+    # installs only these runtime dependencies — an optional extra would not be
+    # installed. Local SQLite use still works; the driver is simply present.
+    "psycopg[binary]>=3.2",
 ]
 
 [build-system]
@@ -22,10 +27,10 @@ tapejudge = ["web/templates/*.html", "web/static/*"]
 
 [project.optional-dependencies]
 dev = ["ruff>=0.6"]
-# The durable, shared store used by a hosted deployment (a serverless instance
-# has no persistent filesystem). Local use and the test suite need only SQLite,
-# which ships with Python.
-server = ["psycopg[binary]>=3.2"]
+# Kept as a compatibility alias: the PostgreSQL driver used to live here, but a
+# hosted deployment installs only the base dependencies, so psycopg is now a
+# first-class runtime dependency above. `pip install -e '.[server]'` still works.
+server = []
 
 [project.scripts]
 tapejudge = "tapejudge.web.app:main"
