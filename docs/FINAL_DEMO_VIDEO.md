@@ -92,10 +92,15 @@ contact sheet), so each claim above can be checked against a frame.
 Headful Chromium on a virtual display (Xvfb), driven by Playwright, screen-captured
 with `ffmpeg` `x11grab`; the browser's own toolbar is cropped out. Each scene is a
 separate clip paced to its narration length so audio and video stay aligned, then
-concatenated. The narration is synthesised with Piper. The full tool is
+concatenated and re-encoded so the segments share one monotonic timeline (a stream
+copy carries each segment's own clock and yields non-monotonic-DTS warnings at
+every boundary). The narration is synthesised with Piper. The full tool is
 [`scripts/demo_video.py`](../scripts/demo_video.py); it is a development-only tool
 (it needs Playwright and Piper, which are not project dependencies) and is not part
 of the deployed application.
+
+`verify` fails if the file does not decode cleanly, if any scene's frame is
+near-blank, or if any scene's audio is silent.
 
 ```bash
 # Rebuild the isolated dataset, record, and assemble (development machine only):

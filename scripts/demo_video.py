@@ -556,14 +556,20 @@ def assemble():
     lst = BUILD / "concat.txt"
     lst.write_text("".join(f"file '{f.name}'\n" for f in scenes))
     OUT.parent.mkdir(parents=True, exist_ok=True)
+    # Re-encode the concatenation (rather than stream-copy) so ffmpeg rewrites
+    # the per-segment timestamps into one monotonic timeline; a stream copy
+    # carries each segment's own clock and produces non-monotonic DTS warnings
+    # at every scene boundary.
     run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(lst),
-         "-c", "copy", "-movflags", "+faststart", str(OUT)])
+         "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+         "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", "-ar", "22050",
+         "-movflags", "+faststart", str(OUT)])
     print("wrote", OUT)
 
 
 # --------------------------------------------------------------- verify ------ #
 def verify():
-    """Frame content, blank-frame and per-scene audio checks on the result."""
+    """Decode, frame-content, blank-frame and per-scene audio checks."""
     import numpy as np
     from PIL import Image
 
@@ -573,6 +579,12 @@ def verify():
     for name, T in TARGETS.items():
         starts[name] = t
         t += T
+
+    # A full decode must be clean: no error/warning lines (a non-monotonic DTS at
+    # a scene boundary means the concat did not re-time the segments).
+    dec = subprocess.run(["ffmpeg", "-v", "warning", "-i", str(OUT), "-f", "null", "-"],
+                         capture_output=True, text=True)
+    decode_warnings = [ln for ln in dec.stderr.splitlines() if ln.strip()]
 
     def frame_at(ts, path):
         subprocess.run(["ffmpeg", "-y", "-ss", f"{ts}", "-i", str(OUT),
@@ -609,6 +621,9 @@ def verify():
     for i, (_n, th) in enumerate(thumbs):
         sheet.paste(th, ((i % cols) * 480, (i // cols) * 300))
     sheet.save(EVID / "contact-sheet.png")
+    report["decode"] = {"clean": not decode_warnings, "warnings": decode_warnings}
+    if decode_warnings:
+        problems.append(f"decode: {len(decode_warnings)} warning line(s)")
     print(json.dumps(report, indent=2))
     print("PROBLEMS:", problems or "none")
     return 1 if problems else 0
