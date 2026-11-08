@@ -1,8 +1,10 @@
 {% extends "base.html" %}
+{% from "_macros.html" import state_rail %}
 {% block title %}{{ c.name }} · Publish · TapeJudge{% endblock %}
 {% block content %}
 <div class="crumb"><a href="{{ url_for('index') }}">← Competitions</a></div>
 <div class="page-head">
+  <p class="eyebrow muted-eyebrow">Publication</p>
   <h1>{{ c.name }}</h1>
   <p class="sub">Publication and freezing. This is the moment the rule becomes
   fixed and the identifiers you can publish with your results are minted.</p>
@@ -36,6 +38,7 @@
     <div class="panel">
       <h2>Publication state</h2>
       <p><strong>{{ c.publication.label }}</strong></p>
+      {{ state_rail(c) }}
       <dl class="kv">
         <dt>Chain id</dt><dd class="mono">{{ c.publication.chain_id or '—' }}</dd>
         <dt>Processor</dt><dd class="hash">{{ c.publication.processor or '—' }}</dd>

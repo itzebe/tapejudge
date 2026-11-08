@@ -37,7 +37,7 @@ Run against the public deployment on 2026-11-08.
 |---|---|---|
 | Health | `curl /api/health` | `{"ok": true}` |
 | Smoke: pages | `curl /`, `/c/<id>/publish`, `/c/<id>/verify`, `/api/integration` | all `200` |
-| Public URL | `curl https://work-1-…prod-runtime.all-hands.dev/` | `200` |
+| Public URL | `curl https://tapejudge.vercel.app/` | `200` |
 | Favicon | `curl -o /dev/null -w '%{http_code} %{content_type}' /favicon.ico` | `200 image/svg+xml` |
 | Served asset == repo | sha256 of `style.css` (repo) vs served | identical |
 | Full test suite | `python3 -m unittest discover -s tests` | **246 OK** (skipped=8) |
@@ -62,14 +62,10 @@ Security controls, re-verified live:
 
 ## 4. Honest blockers
 
-- **Durable hosting.** The public URL runs inside a work-host sandbox that does
-  not survive the session ending, and the workspace has no service manager
-  (PID 1 is `openhands-agent`). `scripts/autostart.sh` restores the app after a
-  reset within this workspace, but it cannot make the sandbox a managed host.
-  A permanent host, or a managed Postgres DSN (`TAPEJUDGE_DATABASE_URL`), is
-  still required for a durable public deployment. The free managed-Postgres slot
-  was unavailable (the workspace Supabase projects are at their free-project
-  cap), so this is a credential/plan blocker, not a code gap.
+- ~~**Durable hosting.**~~ **Resolved in the release-closure pass** — see §6.
+  The app now runs on Vercel (`tapejudge.vercel.app`) backed by a Neon Postgres
+  store, so records survive a cold start. The earlier work-host URL was a
+  sandbox and is no longer the access link.
 - **Publication is prepared, not sent.** The app holds no key by design; a
   circuit ID exists only after the operator signs and broadcasts the prepared
   transaction, and the app then confirms it by reading the chain.
@@ -81,7 +77,100 @@ Security controls, re-verified live:
 ## 5. Remaining limitations
 
 - The demo database currently holds one competition, `SYNTHETIC — Demo Judging
-  Round` (`comp_3801e585d939`); the journey-probe debris was removed so the
+  Round` (`comp_563ebff5be18`); the journey-probe debris was removed so the
   public demo shows only the labelled demo round.
 - The `tapeout` transaction was not broadcast; `PUBLISH_ONCHAIN_VERIFIED` is set
   only by a real match against chain state, which has not happened.
+
+---
+
+## 6. Release-closure pass (2026-11-08, second pass)
+
+A second pass closed the outstanding release-management work and converged the
+project on **one verified, consistent production release**. Baseline for the
+pass was `172d040`; everything below was executed against the live deployment on
+this date.
+
+### 6.1 Durable public deployment
+
+The app is deployed on Vercel (project `tapejudge`, team `marvinsjones06-1839`)
+at <https://tapejudge.vercel.app>, backed by a free **Neon Postgres** database
+provisioned through the Vercel marketplace. Git auto-deploy is connected, so
+`master` deploys on push.
+
+| Check | Command | Result |
+|---|---|---|
+| Health | `curl https://tapejudge.vercel.app/api/health` | `{"chain_reachable":true,"ok":true}` |
+| Landing | `curl -o /dev/null -w '%{http_code}' https://tapejudge.vercel.app/` | `200` |
+| Demo ranking | `curl /c/comp_563ebff5be18/results` | `200` |
+| Demo verification | `curl /c/comp_563ebff5be18/verify` | `200` |
+| Integration | `curl /api/integration` | `state: PREPARED_BUT_AWAITING_AUTHORISATION`, `reads_verified_live: true` |
+
+The store is selected by `TAPEJUDGE_DATABASE_URL` with a **stable** schema
+(`TAPEJUDGE_DB_SCHEMA`, hashed to `t_…`), so every serverless instance reads the
+same database; `create_app` refuses to boot on Vercel without a fixed secret, a
+DSN and a schema.
+
+### 6.2 Production store hygiene
+
+The end-to-end probe (`scripts/journey_probe.mjs`) creates a real competition
+each run. Five runs against the deployment had left five `Journey Probe Round`
+rows on the public landing page. Two maintenance tools were added, each with a
+pure, tested core:
+
+- `scripts/purge_demo_competitions.py` — removes competitions by **exact name**
+  and every row that references them, in one transaction; dry-run by default;
+  refuses to delete every competition. Five probe rounds were removed
+  (5 competitions, 5 entries, 5 evaluations, 5 invitations, 15 memberships, 35
+  audit events).
+- `scripts/reset_production_store.py` — converges the store on an explicit
+  keep-list (the demo competition and the three demo accounts), so a reset is a
+  reviewable baseline, never "delete whatever looks like junk". Used to remove
+  235 fixture competitions and 10 fixture accounts that a mis-scoped local test
+  run had written to the production schema (see 6.3).
+
+The landing page now lists exactly one competition — the labelled
+`SYNTHETIC — Demo Judging Round`.
+
+### 6.3 Test-isolation guard (root-cause fix)
+
+The incident behind 6.2 was possible because `create_app(testing=True)` adopted
+whatever `TAPEJUDGE_DATABASE_URL` / `TAPEJUDGE_DB_SCHEMA` the shell carried, so a
+test run in a deployed shell wrote into the production schema. `create_app` now
+calls `_require_test_isolation`: a testing app **refuses to start** when
+`TAPEJUDGE_DATABASE_URL` is set. Tests use the SQLite store; the Postgres path is
+exercised by `tests/test_store_contract.py` against an isolated
+`TAPEJUDGE_TEST_DATABASE_URL` schema. Pinned by
+`tests/test_deployment.py::test_testing_app_refuses_the_production_database`.
+
+`scripts/journey_probe.mjs` also warns loudly when its target is not local, so
+the debris cannot accumulate unnoticed again.
+
+### 6.4 Interface: editorial design system
+
+The interface was rebuilt as a **warm editorial ledger** (see
+`docs/DESIGN_SYSTEM.md`): deep-ink sections against warm ivory, a single rust
+accent that means "the fixed thing", Fraunces for statements, a humanist sans
+for controls and mono for all evidence. The landing page now argues what
+TapeJudge is and why a frozen rule matters; the honesty model (frozen /
+prepared / published / verified) is rendered as a state rail; every template was
+moved onto the shared component set. Fonts are self-hosted (latin + latin-ext,
+~280 KB) so no third-party origin is added to the CSP.
+
+### 6.5 Verification (release-closure pass)
+
+| Check | Command | Result |
+|---|---|---|
+| Lint | `python3 -m ruff check .` | All checks passed |
+| Full suite (offline) | `TAPEJUDGE_SKIP_CHAIN=1 python3 -m unittest discover -s tests` | **263 OK** (skipped=16) |
+| Journey probe | `node scripts/journey_probe.mjs http://127.0.0.1:12010` | **13/13** |
+| Accessibility | `node scripts/a11y_audit.mjs … / /login /signup /new /c/…/results /c/…/verify` at 390/768/1440 | **0 failing / 18 checks** |
+| Production landing | `curl https://tapejudge.vercel.app/` | 1 competition (demo only) |
+
+### 6.6 Documentation corrected
+
+- `docs/HACKATHON_SUBMISSION.md` — the access link and the hosting note now
+  describe the durable Vercel deployment, not the sandbox.
+- `docs/FINAL_DEMO_SCRIPT.md` — the demo competition id is `comp_563ebff5be18`
+  (the one that exists in production), and the tab list uses real routes
+  (`/results` is the public hub; there is no bare `/c/<id>` overview route).

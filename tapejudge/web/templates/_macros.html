@@ -1,0 +1,29 @@
+{# Shared UI macros. Kept tiny and read-only. #}
+
+{# The publication progression, as an ordered rail. It shows only states the
+   record can prove; a state the competition has not reached is dimmed, and the
+   current state is marked. This makes the honesty model visible instead of
+   hiding it in a sentence. #}
+{% macro state_rail(comp) %}
+  {% set pub = comp.publication %}
+  {% set mode = pub.mode %}
+  {% set frozen = comp.status != 'draft' %}
+  {# 0 local · 1 prepared · 2 awaiting signature · 3 broadcast · 4 confirmed ·
+     5 independently verified. Only states the record can prove are reached. #}
+  {% set reached = -1 if not frozen
+       else (5 if mode == 'onchain_verified'
+       else (2 if mode == 'onchain_pending_signature'
+       else (0 if mode == 'local_only' else 0))) %}
+  {% set states = ['Local circuit', 'Prepared', 'Awaiting signature',
+                   'Broadcast', 'Confirmed', 'Independently verified'] %}
+  <ol class="state-rail" aria-label="Publication progression">
+    {% for s in states %}
+      {% set i = loop.index0 %}
+      <li class="{{ 'proven' if (i == reached and reached == 5)
+                   else ('done' if i < reached
+                   else ('current' if i == reached else '')) }}">
+        <span class="dot" aria-hidden="true"></span>{{ s }}{% if i == reached and reached != 5 %}<span class="sr-only"> (current)</span>{% endif %}
+      </li>
+    {% endfor %}
+  </ol>
+{% endmacro %}

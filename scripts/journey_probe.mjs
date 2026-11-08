@@ -8,8 +8,19 @@
 // (anonymous writes refused, CSRF enforced, cross-account access denied) and
 // prints a JSON report. It writes to the running demo database; that is fine
 // because every value here is synthetic.
+//
+// Pointed at a remote host it leaves a real "Journey Probe Round" competition in
+// that host's store, so the landing page fills with debris. It warns loudly when
+// the target is not local; remove what it left with
+// `scripts/purge_demo_competitions.py --name "Journey Probe Round" --confirm`.
 
 const base = process.argv[2] || "http://127.0.0.1:12000";
+if (!/^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(:|\/|$)/.test(base)) {
+  console.error(
+    `WARNING: ${base} is not local — this run will create a real ` +
+    `"Journey Probe Round" competition in that store. Clean it up with ` +
+    `scripts/purge_demo_competitions.py --name "Journey Probe Round" --confirm`);
+}
 let cookie = "";
 const jar = {};
 

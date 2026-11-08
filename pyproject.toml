@@ -70,3 +70,10 @@ ignore = ["BLE001", "S112", "RUF001"]
 "tests/test_scoring.py" = ["RUF059", "F841", "SIM117", "E501", "B905"]
 "tests/test_adversarial.py" = ["RUF059", "F841", "E501"]
 "tests/test_chain.py" = ["E501"]
+# The maintenance script interpolates the schema and table identifiers it reads
+# from this file's own constants, not from input (S608: no user-supplied string
+# reaches the query text; the competition ids it deletes by are bound
+# parameters). E402: it inserts the repo root on sys.path before importing the
+# package it operates on, which is what lets the script run as a file.
+"scripts/purge_demo_competitions.py" = ["S608", "E402"]
+"scripts/reset_production_store.py" = ["S608", "E402"]

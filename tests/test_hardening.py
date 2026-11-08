@@ -12,7 +12,9 @@ and then fixed. The intent is that none of these can silently regress:
 * a rule that cannot compile is a clean 4xx, not a 500;
 * the production app ships hardened headers, cookie flags and no default secret.
 """
+import itertools
 import os
+import re
 import sys
 import tempfile
 import threading
@@ -473,21 +475,35 @@ class TestStylesheetRegression(unittest.TestCase):
 
 
 class TestHeadingOrder(unittest.TestCase):
-    """No template may skip a heading level (WCAG 1.3.1).
+    """No rendered page may skip a heading level (WCAG 1.3.1).
 
-    Panels used ``<h3>`` directly under the page ``<h1>``, so every panel was a
-    skipped level. They are ``<h2>`` now; this pins it.
+    The earlier regression was panels using ``<h3>`` directly under the page
+    ``<h1>`` (a skipped level). A blanket "no template contains an h3" check
+    both missed real skips (an h1 -> h3 jump in a later section) and rejected
+    correct nesting (an h3 under an h2). This test renders every public page and
+    walks its heading tags in document order, asserting each is at most one
+    level deeper than the previous one.
     """
 
-    def test_no_h3_under_h1_templates(self):
-        from pathlib import Path
-        tdir = Path(__file__).resolve().parents[1] / "tapejudge" / "web" / "templates"
-        offenders = []
-        for path in tdir.glob("*.html"):
-            text = path.read_text()
-            if "<h3" in text:
-                offenders.append(path.name)
-        self.assertEqual(offenders, [], f"templates still use <h3>: {offenders}")
+    def _heading_levels(self, html: str) -> list[int]:
+        return [int(m.group(1)) for m in re.finditer(r"<h([1-6])[\s>]", html)]
+
+    def test_rendered_pages_do_not_skip_heading_levels(self):
+        app = create_app(db_path=":memory:", chain_client=_StubChain(), testing=True)
+        client = app.test_client()
+        # Public, unauthenticated pages that must render a full document.
+        paths = ["/", "/login", "/signup", "/new"]
+        for path in paths:
+            with self.subTest(path=path):
+                r = client.get(path, follow_redirects=True)
+                self.assertEqual(r.status_code, 200, f"{path} did not render")
+                levels = self._heading_levels(r.get_data(as_text=True))
+                self.assertTrue(levels, f"{path} has no headings")
+                self.assertEqual(levels[0], 1, f"{path} does not start at h1")
+                for prev, cur in itertools.pairwise(levels):
+                    self.assertLessEqual(
+                        cur, prev + 1,
+                        f"{path}: heading jumps from h{prev} to h{cur}")
 
 
 if __name__ == "__main__":

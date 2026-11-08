@@ -1,7 +1,10 @@
-/* Copy-to-clipboard affordance. Progressive enhancement only: every value is
-   selectable text even if this script never runs. */
+/* Copy-to-clipboard affordance and restrained reveal motion. Progressive
+   enhancement only: every value is selectable text, and every section is
+   visible, even if this script never runs. */
 (function () {
   "use strict";
+
+  // Copy-to-clipboard.
   document.addEventListener("click", function (ev) {
     var btn = ev.target.closest("[data-copy]");
     if (!btn) return;
@@ -31,4 +34,23 @@
     document.body.removeChild(ta);
     done();
   }
+
+  // Reveal-on-scroll. Skipped entirely when the user prefers reduced motion or
+  // the browser lacks IntersectionObserver; in both cases content is shown.
+  var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var reveals = document.querySelectorAll(".reveal");
+  if (reduce || !("IntersectionObserver" in window)) {
+    reveals.forEach(function (el) { el.classList.add("in"); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (entry) {
+      if (entry.isIntersecting) {
+        entry.target.classList.add("in");
+        io.unobserve(entry.target);
+      }
+    });
+  }, { rootMargin: "0px 0px -8% 0px", threshold: 0.08 });
+  reveals.forEach(function (el) { io.observe(el); });
 })();
+

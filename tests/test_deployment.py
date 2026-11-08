@@ -106,6 +106,25 @@ class TestVercelDeployment(unittest.TestCase):
         for d in ("tests/", "evidence/", "docs/", "scripts/", "demo/"):
             self.assertIn(d, text)
 
+    def test_testing_app_refuses_the_production_database(self):
+        """A test build must never open the configured production DSN.
+
+        The guard exists because a test run that inherited a deployed shell's
+        environment wrote fixture rows into the live schema.
+        """
+        from tapejudge.web.app import create_app
+
+        base = dict(os.environ)
+        try:
+            os.environ["TAPEJUDGE_DATABASE_URL"] = "postgresql://u:p@h/db"
+            os.environ["TAPEJUDGE_DB_SCHEMA"] = "tapejudge-prod"
+            with self.assertRaises(RuntimeError) as ctx:
+                create_app(testing=True)
+            self.assertIn("testing app must not use", str(ctx.exception))
+        finally:
+            os.environ.clear()
+            os.environ.update(base)
+
     def test_serverless_start_refuses_missing_secret_and_dsn(self):
         """A hosted start must fail loudly, never degrade to a weak secret or SQLite.
 
