@@ -116,3 +116,49 @@ entrypoint hard-refuses to start without `TAPEJUDGE_SECRET` or with
   against_chain`. `XLayerClient` has no `next_circuit_id` — it is `next_id()`.
 - Added an MIT `LICENSE`. Did **not** create a GitHub remote (not explicitly
   authorised); the repo is self-contained and independently runnable.
+
+## Mission 8 (2026-11-07) — public launch, durable store, hackathon readiness
+
+Repo now has a **remote**: `https://github.com/itzebe/tapejudge` (**PUBLIC**,
+default `master`). HEAD `730e97c`. Push with an ephemeral token URL
+(`git push "https://${GITHUB_TOKEN}@github.com/itzebe/tapejudge.git" master:master`)
+— the `origin` remote is deliberately token-free, so a bare `git push` hangs on a
+username prompt.
+
+- **Public deployment:** `https://work-1-gvcyygdjrlurcmdz.prod-runtime.all-hands.dev/`
+  (→ 200). gunicorn 26.2.0, 1 worker, on `0.0.0.0:12000`, launched by
+  `scripts/serve_public.sh` (new, committed). Durable SQLite at
+  `/workspace/.tapejudge-data/tapejudge.db` on the persistent workspace disk;
+  secret persisted at `/workspace/.tapejudge-data/secret` (600) so sessions
+  survive a restart. **Durability proven** by restarting and finding both
+  competitions still present.
+- **Postgres store added:** `tapejudge/store_pg.py` (`PostgresStore`, same `Store`
+  interface + `DuplicateError`, optional schema isolation); `store.py::make_store()`
+  picks it when `TAPEJUDGE_DATABASE_URL` is set. `tests/test_store_contract.py`
+  runs the **same** behavioural contract on both backends. Full suite is green on
+  both: `TAPEJUDGE_TEST_DATABASE_URL=<dsn> python3 -m unittest discover -s tests`
+  → **237 OK** (also 237 OK on SQLite). Driver is the `server` extra
+  (`pip install -e '.[server]'`, psycopg[binary]>=3.2).
+- **Supabase/Vercel provisioning is hard-blocked (do not retry blindly):**
+  Supabase free tier caps **2 active projects per user** and both are unrelated
+  work; a new org `tapejudge-org` (`wkfthwnxmsabynflprkk`) was created but the
+  account role cannot create projects in it. Vercel's Supabase integration
+  reports "Installation does not support provisioning". No project was deleted.
+  → single-instance persistent-disk SQLite is the deployment; the Postgres
+  adapter is ready for a managed DSN when a slot exists.
+- **`demo/run_demo.py` had rotted** (crashed at publication): its `_NoChain` stub
+  `prepare_tapeout()` lacked the `n_gates` kwarg the service passes, and had no
+  `simulate_tapeout()`. Nothing tested the demo. Fixed + `tests/test_demo.py`
+  runs it end to end and asserts the honest outcomes. **If you change the chain
+  client interface, update the demo stub too.**
+- `base.html` gained Open Graph / Twitter card tags (self.title()/self.description()
+  so child pages populate previews; no image tag without an asset). Pinned by
+  `tests/test_hardening.py::test_social_preview_metadata_present`.
+- Live gates re-run this session: journey probe **13/13**; a11y **15/15** at
+  390/768/1440; security headers present (**HSTS still absent** — the work-host
+  runtime fronts TLS); `/api/*` no-store; anon write 401; oversized 413; ruff
+  clean; pip-audit clean. X Layer evidence re-read read-only (block advanced to
+  ~75.33M; publication still honestly `needs_transistors`/not sent).
+- Docs added: `docs/MISSION8_PUBLIC_LAUNCH_REPORT.md`,
+  `docs/HACKATHON_SUBMISSION.md`; README + deployment plan updated for the
+  single-instance host and the two stores.
