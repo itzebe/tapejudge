@@ -2,8 +2,8 @@
   "beacon": "0xf70d1ed4f62cf3780157b0b421b7e2f45bd0991c",
   "beacon_implementation": "0x977f217887e085d298cb3819cdad5a0ee35f29b2",
   "beacon_owner": "0x0000000000000000000000000000000000000000",
-  "block_number": 75349229,
-  "captured_at": "2026-11-08T06:11:05Z",
+  "block_number": 75371305,
+  "captured_at": "2026-11-08T12:19:01Z",
   "chain_id": 196,
   "circuit_1_cross_check": {
     "info": {
@@ -41,7 +41,7 @@
     ]
   },
   "circuit_layer_frozen": true,
-  "cpu_count": 415,
+  "cpu_count": 416,
   "factory": "0x1f09DAeFA827f02CBb40967cc91b259763760761",
   "prepare_tapeout": {
     "blocked_reason": null,

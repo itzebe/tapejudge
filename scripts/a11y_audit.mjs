@@ -124,7 +124,7 @@ await cdp.send("Runtime.enable");
 
 const out = [];
 for (const p of paths) {
-  for (const [w, h] of [[390, 900], [768, 900], [1440, 1000]]) {
+  for (const [w, h] of [[360, 800], [390, 900], [768, 900], [1024, 950], [1440, 1000]]) {
     await cdp.send("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: 1, mobile: w < 500 });
     await cdp.send("Page.navigate", { url: base + p });
     await new Promise((r) => {

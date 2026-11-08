@@ -13,13 +13,23 @@ not reformat. Git remote **`https://github.com/itzebe/tapejudge`** (default
 
 ## Controlled release — 2026-11-08 (FINAL; this is the current release state)
 
-- **One consistent release across GitHub + Vercel.** `master` HEAD **`5b3d98d`**
-  (after PR #2); the deployment implementation merge is **`bb8bc66`** (PR #1).
-  Production deployment `dpl_3Br2vU5keq2KkcQ9DiUBn87ykRSr` @ `5b3d98d`, aliased
-  to https://tapejudge.vercel.app. Evidence: `docs/CONTROLLED_RELEASE_EVIDENCE.md`.
-- **PR #1 was a draft.** Marking it ready via the REST endpoint
-  `POST /pulls/1/ready_for_review` returns **404** for this token; use the GraphQL
-  `markPullRequestReadyForReview` mutation. Both PRs merged with a merge commit.
+- **One consistent release across GitHub + Vercel.** `master` HEAD **`264297c`**
+  (PR #4, release-closure pass; earlier HEAD `5b3d98d` after PR #2; the deployment
+  implementation merge is `bb8bc66`, PR #1). Production is aliased to
+  https://tapejudge.vercel.app. Evidence: `docs/CONTROLLED_RELEASE_EVIDENCE.md`
+  and `docs/FINAL_RELEASE_REPORT.md` §6 (release-closure pass).
+- **A test build can no longer open a hosted DB — it fails closed.** `create_app(testing=True)`
+  refuses to start when **any** of eight hosted-DB indicators is present
+  (`_HOSTED_DB_INDICATORS` in `tapejudge/web/app.py`: `VERCEL`, `TAPEJUDGE_DATABASE_URL`,
+  `DATABASE_URL`, `POSTGRES_URL`, `POSTGRES_URL_NON_POOLING`, `POSTGRES_PRISMA_URL`,
+  `POSTGRES_HOST`, `POSTGRES_USER`), before `make_store()` is reached. It refuses
+  rather than falling back to SQLite, so a misconfigured test host cannot look green.
+  Deliberately excluded: `TAPEJUDGE_DB` (a SQLite path) and `TAPEJUDGE_TEST_DATABASE_URL`
+  (the isolated contract DSN, which never flows through `create_app`). Contract:
+  `docs/ARCHITECTURE.md` §"Test database isolation".
+- **PRs created via the API land as DRAFTS.** `gh pr ready <n>` (or the GraphQL
+  `markPullRequestReadyForReview` mutation) is required before merge; the REST
+  ready endpoint 404s for this token. Applies to PR #1 and PR #4.
 - **Auto-deploy IS enabled** (`createDeployments: enabled`): merging to `master`
   produced a production deployment at the merge commit automatically (`source: git`).
   Do not assume it is off; the earlier "disabled" reading was wrong.

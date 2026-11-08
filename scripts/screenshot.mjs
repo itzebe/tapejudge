@@ -4,7 +4,7 @@
 //
 // Drives the system Chromium (the container has no Chrome bundle for the
 // Playwright tooling) and writes a full-page PNG per (path, width). Used for
-// the design QA in docs/FINAL_PRODUCT_COMPLETION_REPORT.md. Read-only.
+// the design QA recorded in docs/FINAL_RELEASE_REPORT.md. Read-only.
 
 import { writeFileSync, mkdirSync } from "node:fs";
 

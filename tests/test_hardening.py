@@ -332,6 +332,12 @@ class TestSecurityHeadersAndSecrets(unittest.TestCase):
         self.assertEqual(r.headers.get("X-Content-Type-Options"), "nosniff")
         self.assertEqual(r.headers.get("X-Frame-Options"), "DENY")
         self.assertIn("default-src 'self'", r.headers.get("Content-Security-Policy", ""))
+        self.assertEqual(r.headers.get("Referrer-Policy"), "same-origin")
+        self.assertEqual(r.headers.get("Cross-Origin-Opener-Policy"),
+                         "same-origin-allow-popups")
+        policy = r.headers.get("Permissions-Policy", "")
+        for feature in ("camera=()", "microphone=()", "geolocation=()"):
+            self.assertIn(feature, policy)
 
     def test_hsts_is_opt_in_and_absent_by_default(self):
         # Never forced on a shared host: default off, on only when asked.
