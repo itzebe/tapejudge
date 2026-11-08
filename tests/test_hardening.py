@@ -331,6 +331,19 @@ class TestSecurityHeadersAndSecrets(unittest.TestCase):
         self.assertEqual(r.headers.get("X-Frame-Options"), "DENY")
         self.assertIn("default-src 'self'", r.headers.get("Content-Security-Policy", ""))
 
+    def test_hsts_is_opt_in_and_absent_by_default(self):
+        # Never forced on a shared host: default off, on only when asked.
+        _app, c = make_client(testing=False)
+        self.assertIsNone(c.get("/").headers.get("Strict-Transport-Security"))
+        os.environ["TAPEJUDGE_ENABLE_HSTS"] = "1"
+        try:
+            _app2, c2 = make_client(testing=False)
+            hsts = c2.get("/").headers.get("Strict-Transport-Security", "")
+            self.assertIn("max-age=", hsts)
+            self.assertIn("includeSubDomains", hsts)
+        finally:
+            os.environ.pop("TAPEJUDGE_ENABLE_HSTS", None)
+
     def test_api_is_not_cached(self):
         _app, c = make_client(testing=False)
         r = c.get("/api/health")

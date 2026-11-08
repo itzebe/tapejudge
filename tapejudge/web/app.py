@@ -75,6 +75,8 @@ def create_app(*, db_path: str | None = None, chain_client=None,
     app.config["SERVICE"] = TapeJudgeService(store, chain_client=chain_client)
     app.config["CHAIN"] = chain_client or XLayerClient()
     app.config["LOGIN_THROTTLE"] = LoginThrottle()
+    # Opt-in HSTS for a host that serves its own domain over TLS. Never default.
+    app.config["ENABLE_HSTS"] = os.environ.get("TAPEJUDGE_ENABLE_HSTS") == "1"
     _register_routes(app)
     _register_security_headers(app)
     _register_error_handlers(app)
@@ -172,6 +174,13 @@ def _register_security_headers(app: Flask) -> None:
             "base-uri 'self'; form-action 'self'")
         if request.path.startswith("/api/"):
             resp.headers.setdefault("Cache-Control", "no-store")
+        # HSTS is opt-in and only on a host that serves its own domain over TLS.
+        # Forcing it on a shared work-host domain would pin every sibling
+        # subdomain to HTTPS for a year, so it is never the default.
+        if app.config.get("ENABLE_HSTS"):
+            resp.headers.setdefault(
+                "Strict-Transport-Security",
+                "max-age=31536000; includeSubDomains")
         return resp
 
 
